@@ -2,11 +2,13 @@
 module Types where
 
 import Control.Monad.Trans (MonadIO(..))
+import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM.TQueue (TQueue, newTQueue, readTQueue, writeTQueue)
 import Data.Maybe (fromJust)
 import Data.Text (Text)
-import GHCJS.Foreign (ToJSString(..), FromJSString(..), jsNull)
+import GHCJS.Foreign (ToJSString(..), FromJSString(..), ForeignRetention(AlwaysRetain), asyncCallback, jsNull)
 import GHCJS.Marshal (ToJSRef(..), FromJSRef(..))
-import GHCJS.Types (JSRef(..), JSString(..), castRef, nullRef, isNull, isUndefined)
+import GHCJS.Types (JSRef(..), JSString(..), JSFun, castRef, nullRef, isNull, isUndefined)
 
 -- * JSNode
 
@@ -51,7 +53,7 @@ instance IsJSNode JSNodeList where
 foreign import javascript unsafe "$1[\"item\"]($2)" js_item ::
         JSRef JSNodeList -> Word -> IO (JSRef JSNode)
 
--- | <https://developer.mozilla.org/en-US/docs/Web/API/NodeList.item Mozilla NodeList.item documentation> 
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/NodeList.item Mozilla NodeList.item documentation>
 item ::
      (MonadIO m) => JSNodeList -> Word -> m (Maybe JSNode)
 item self index
@@ -118,7 +120,7 @@ foreign import javascript unsafe "$1[\"createElement\"]($2)"
         js_createJSElement ::
         JSRef JSDocument -> JSString -> IO (JSRef JSElement)
 
--- | <https://developer.mozilla.org/en-US/docs/Web/API/JSDocument.createJSElement Mozilla JSDocument.createJSElement documentation> 
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/JSDocument.createJSElement Mozilla JSDocument.createJSElement documentation>
 createJSElement ::
               (MonadIO m, ToJSString tagName) =>
                 JSDocument -> tagName -> m (Maybe JSElement)
@@ -130,7 +132,7 @@ foreign import javascript unsafe "$1[\"getElementsByName\"]($2)"
         js_getElementsByName ::
         JSRef JSDocument -> JSString -> IO (JSRef JSNodeList)
 
--- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.getElementsByName Mozilla Document.getElementsByName documentation> 
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.getElementsByName Mozilla Document.getElementsByName documentation>
 getElementsByName ::
                   (MonadIO m, ToJSString elementName) =>
                     JSDocument -> elementName -> m (Maybe JSNodeList)
@@ -143,7 +145,7 @@ foreign import javascript unsafe "$1[\"getElementsByTagName\"]($2)"
         js_getElementsByTagName ::
         JSRef JSDocument -> JSString -> IO (JSRef JSNodeList)
 
--- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.getElementsByTagName Mozilla Document.getElementsByTagName documentation> 
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.getElementsByTagName Mozilla Document.getElementsByTagName documentation>
 getElementsByTagName ::
                      (MonadIO m, ToJSString tagname) =>
                        JSDocument -> tagname -> m (Maybe JSNodeList)
@@ -168,7 +170,50 @@ appendJSChild self newChild
           (maybe jsNull (unJSNode . toJSNode) newChild))
          >>= fromJSRef)
 
+foreign import javascript unsafe "$1[\"removeChild\"]($2)"
+        js_removeChild :: JSRef JSNode -> JSRef JSNode -> IO (JSRef JSNode)
 
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.removeChild Mozilla Node.removeChild documentation>
+removeChild ::
+            (MonadIO m, IsJSNode self, IsJSNode oldChild) =>
+              self -> Maybe oldChild -> m (Maybe JSNode)
+removeChild self oldChild
+  = liftIO
+      ((js_removeChild (unJSNode (toJSNode self))
+          (maybe jsNull (unJSNode . toJSNode) oldChild))
+         >>= fromJSRef)
+
+foreign import javascript unsafe "$1[\"firstChild\"]"
+        js_getFirstChild :: JSRef JSNode -> IO (JSRef JSNode)
+
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.firstChild Mozilla Node.firstChild documentation>
+getFirstChild :: (MonadIO m, IsJSNode self) => self -> m (Maybe JSNode)
+getFirstChild self
+  = liftIO ((js_getFirstChild (unJSNode (toJSNode self))) >>= fromJSRef)
+
+removeChildren
+    :: (MonadIO m, IsJSNode self) =>
+       self
+    -> m ()
+removeChildren self =
+    do mc <- getFirstChild self
+       case mc of
+         Nothing -> return ()
+         (Just _) ->
+             do removeChild self mc
+                removeChildren self
+{-
+foreign import javascript unsafe "$1[\"setAttribute\"]($2, $3)"
+        js_setAttribute :: JSRef Element -> JSString -> JSString -> IO ()
+
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/Element.setAttribute Mozilla Element.setAttribute documentation>
+setAttribute ::
+             (MonadIO m, ToJSString name, ToJSString value) =>
+               JSElement -> name -> value -> m ()
+setAttribute self name value
+  = liftIO
+      (js_setAttribute (unElement self) (toJSString name) (toJSString value))
+-}
 -- * JSTextNode
 
 newtype JSTextNode = JSTextNode (JSRef JSTextNode) -- deriving (Eq)
@@ -191,7 +236,7 @@ instance IsJSNode JSTextNode where
 foreign import javascript unsafe "$1[\"createTextNode\"]($2)"
         js_createTextNode :: JSRef JSDocument -> JSString -> IO (JSRef JSTextNode)
 
--- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.createTextNode Mozilla Document.createTextNode documentation> 
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.createTextNode Mozilla Document.createTextNode documentation>
 createJSTextNode ::
                (MonadIO m, ToJSString data') =>
                  JSDocument -> data' -> m (Maybe JSTextNode)
@@ -201,12 +246,90 @@ createJSTextNode document data'
           (toJSString data'))
          >>= fromJSRef)
 
-data Attr = Attr Text Text
+-- * Events
 
-data HTML
-  = Element [Attr] [HTML]
+-- FIXME: Element is overly restrictive
+foreign import javascript unsafe "$1[\"addEventListener\"]($2, $3,\n$4)"
+   js_addEventListener ::
+       JSRef JSElement -> JSString -> JSFun (IO ()) -> Bool -> IO ()
+
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/EventTarget.addEventListener Mozilla EventTarget.addEventListener documentation>
+addEventListener ::
+                 (MonadIO m, ToJSString type') =>
+                   JSElement -> type' -> JSFun (IO ()) -> Bool -> m ()
+addEventListener self type' listener useCapture
+  = liftIO
+      (js_addEventListener (unJSElement self)
+         (toJSString type')
+         listener
+--         (maybe jsNull pToJSRef listener)
+         useCapture)
+
+-- * Pure HTML
+
+data EventType
+    = Change
+    | Click
+
+data Attr action
+    = Attr Text Text
+    | Event (EventType, action)
+
+instance ToJSString EventType where
+    toJSString Change = toJSString "change"
+    toJSString Click  = toJSString "click"
+
+data HTML action
+  = Element Text [(EventType, action)] [Attr action] [HTML action]
   | CDATA Bool Text
 
-renderHTML :: HTML -> IO ()
-renderHTML html = return ()
+renderHTML :: (MonadIO m) => (action -> IO ()) -> JSDocument -> HTML action -> m (Maybe JSNode)
+renderHTML _ doc (CDATA _ t) = fmap (fmap toJSNode) $ createJSTextNode doc t
+renderHTML handle doc (Element tag events attrs children) =
+    do me <- createJSElement doc tag
+       case me of
+         Nothing -> return Nothing
+         (Just e) ->
+             do mapM_ (\c -> appendJSChild e =<< renderHTML handle doc c) children
+                let events' = [ ev | Event ev <- attrs]
+                liftIO $ mapM_ (handleEvent e) events'
+                return (Just $ toJSNode e)
+    where
+--       handleEvent :: JSElement -> (EventType, action) -> IO ()
+      handleEvent e (et, action) =
+          do cb <- asyncCallback AlwaysRetain (handle action) -- FIXME: free ?
+             addEventListener e et cb False
+
+
+
+
+data MUV  model action = MUV
+    { model  :: model
+    , update :: action -> model -> model
+    , view   :: model  -> HTML action
+    }
+
+mainLoop :: JSDocument -> JSNode -> MUV model action -> IO ()
+mainLoop document body (MUV model update view) =
+    do queue <- atomically newTQueue
+       html <- renderHTML (handleAction queue) document (view model)
+       removeChildren body
+       appendJSChild body html
+       loop queue model
+    where
+      handleAction queue = \action -> atomically $ writeTQueue queue action
+      loop queue model =
+          do action <- atomically $ readTQueue queue
+             let model' = update action model
+             html <- renderHTML (handleAction queue) document (view model')
+             removeChildren body
+             appendJSChild body html
+             loop queue model'
+
+muv :: MUV model action -> IO ()
+muv m =
+    do (Just document) <- currentDocument
+       (Just bodyList) <- getElementsByTagName document "body"
+       (Just body)     <- item bodyList 0
+       mainLoop document body m
 
