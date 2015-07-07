@@ -300,9 +300,6 @@ renderHTML handle doc (Element tag events attrs children) =
           do cb <- asyncCallback AlwaysRetain (handle action) -- FIXME: free ?
              addEventListener e et cb False
 
-
-
-
 data MUV  model action = MUV
     { model  :: model
     , update :: action -> model -> model
