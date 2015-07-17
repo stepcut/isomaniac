@@ -3,9 +3,9 @@ module Main where
 
 import Control.Monad.Trans (liftIO)
 import GHCJS.Types (JSRef(..))
-import ISOHSX
 import Language.Haskell.HSX.QQ (hsx)
-import Types
+import Web.ISO.HSX
+import Web.ISO.Types
 
 {- Model -}
 data Model = Model { count :: Int }
@@ -33,9 +33,9 @@ view' (Model c) =
 
 counter :: MUV Model Action
 counter = MUV
-  { muvModel  = Model 0
-  , muvUpdate = update'
-  , muvView   = view'
+  { model  = Model 0
+  , update = update'
+  , view   = view'
   }
 
 main :: IO ()

@@ -1,5 +1,5 @@
 {-# LANGUAGE JavaScriptFFI #-}
-module Types where
+module Web.ISO.Types where
 
 import Control.Monad.Trans (MonadIO(..))
 import Control.Concurrent.STM (atomically)

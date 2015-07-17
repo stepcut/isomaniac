@@ -1,8 +1,8 @@
 {-# LANGUAGE ExtendedDefaultRules, FlexibleInstances, MultiParamTypeClasses, OverloadedStrings, TypeFamilies, RankNTypes #-}
-module ISOHSX where
+module Web.ISO.HSX where
 
 import Data.Text (Text, pack)
-import Types
+import Web.ISO.Types (Attr(Attr, Event), EventType(Change, Click), HTML(Element, CDATA))
 
 default (Text)
 
