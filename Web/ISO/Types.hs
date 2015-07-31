@@ -74,12 +74,12 @@ item self index
       ((js_item (unJSNodeList self) index) >>= fromJSRef)
 
 foreign import javascript unsafe "$1[\"length\"]" js_length ::
-        JSRef JSNodeList -> IO Word
+        JSRef JSNode -> IO Word
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/NodeList.item Mozilla NodeList.item documentation>
-getLength :: (MonadIO m) => JSNodeList -> m Word
-getLength nodeList
-  = liftIO ((js_length (unJSNodeList nodeList))) -- >>= fromJSRefUnchecked)
+getLength :: (MonadIO m, IsJSNode self) => self -> m Word
+getLength self
+  = liftIO (js_length (unJSNode (toJSNode self))) -- >>= fromJSRefUnchecked)
 
 -- foreign import javascript unsafe "$1[\"length\"]" js_getLength ::
 --         JSRef NodeList -> IO Word
@@ -214,6 +214,8 @@ appendJSChild self newChild
       ((js_appendChild (unJSNode (toJSNode self))
           (maybe jsNull (unJSNode . toJSNode) newChild))
          >>= fromJSRef)
+{-
+probably broken on IE9
 
 -- * textContent
 
@@ -226,6 +228,26 @@ setTextContent :: (MonadIO m, IsJSNode self, ToJSString content) =>
                -> m ()
 setTextContent self content =
     liftIO $ (js_setTextContent (unJSNode (toJSNode self)) (toJSString content))
+-}
+
+-- * replaceData
+
+-- FIMXE: perhaps only a TextNode?
+foreign import javascript unsafe "$1[\"replaceData\"]($2, $3, $4)" js_replaceData
+    :: JSRef JSNode
+    -> Word
+    -> Word
+    -> JSString
+    -> IO ()
+
+replaceData :: (MonadIO m, IsJSNode self, ToJSString string) =>
+               self
+            -> Word
+            -> Word
+            -> string
+            -> m ()
+replaceData self start length string =
+    liftIO (js_replaceData (unJSNode (toJSNode self)) start length (toJSString string))
 
 -- * removeChild
 
@@ -281,6 +303,13 @@ foreign import javascript unsafe "$1[\"value\"]"
 getValue :: (MonadIO m, IsJSNode self) => self -> m (Maybe JSString)
 getValue self
   = liftIO ((js_getValue (unJSNode (toJSNode self))) >>= fromJSRef)
+
+foreign import javascript unsafe "$1[\"value\"] = $2"
+        js_setValue :: JSRef JSNode -> JSString -> IO ()
+
+setValue :: (MonadIO m, IsJSNode self, ToJSString str) => self -> str -> m ()
+setValue self str =
+    liftIO (js_setValue (unJSNode (toJSNode self)) (toJSString str))
 
 -- * JSTextNode
 

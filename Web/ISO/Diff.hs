@@ -14,7 +14,7 @@ data Patch action
     | Insert (HTML action)
     | VText Bool Text
     | VNode (HTML action)
-    | Props [Attr action]
+    | Props [Attr action] -- FIXME: add list of attributes to remove
 
 instance Show (Patch action) where
     show Remove = "Remove"
@@ -67,8 +67,8 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
       diffChildren :: [HTML action] -> [HTML action] -> State Int [(Int, [Patch action])]
       diffChildren [] [] = return []
       diffChildren (a:as) (b:bs) =
-          do d <- diff' a b
-             index <- inc
+          do index <- inc
+             d <- diff' a b
              diffs <- diffChildren as bs
              return $ d ++ diffs
       diffChildren (a:as) [] =
