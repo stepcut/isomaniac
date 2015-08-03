@@ -14,5 +14,5 @@ library
                        Web.ISO.Murv
                        Web.ISO.Types
   other-extensions:    ExtendedDefaultRules, FlexibleInstances, MultiParamTypeClasses, OverloadedStrings, QuasiQuotes, TypeFamilies, RankNTypes, JavaScriptFFI
-  build-depends:       base >=4.8 && <4.9, ghcjs-base, mtl, stm, text
+  build-depends:       base >=4.8 && <4.9, aeson, containers, ghcjs-base, mtl, stm, text
   default-language:    Haskell2010

@@ -9,7 +9,7 @@ import qualified Data.Map as Map
 import Data.Text (unpack)
 import GHCJS.Types (castRef)
 import Web.ISO.Diff (Patch(..))
-import Web.ISO.Types (HTML(..), Attr(..), JSDocument, JSElement(..), JSNode, childNodes, item, getFirstChild, getLength, replaceData, setAttribute, unJSNode, setValue)
+import Web.ISO.Types (HTML(..), Attr(..), JSDocument, JSElement(..), JSNode, childNodes, item, getFirstChild, getLength, replaceData, setAttribute, unJSNode, setValue, parentNode, removeChild, replaceChild, renderHTML, appendChild)
 
 -- data GetNodeState
 {-
@@ -28,27 +28,30 @@ getNodes html nodeIndices =
              if (
 -}
 
-apply :: JSDocument -> JSNode -> HTML action -> Map Int [Patch action] -> IO JSNode
-apply document rootNode vdom patches =
-    do let keys = Map.keys patches
+apply :: (action -> IO ()) -> JSDocument -> JSNode -> HTML action -> Map Int [Patch action] -> IO JSNode
+apply handle document rootNode vdom patches =
+    do let indices = Map.keys patches
        putStrLn $ "apply = " ++ show patches
        (Just first) <- getFirstChild rootNode
-       nodeList <- getNodes first vdom keys
+       nodeList <- getNodes first vdom indices
        putStrLn $ "nodeList length = " ++ show (length nodeList)
-       mapM_ (apply' patches) nodeList
+       mapM_ (apply' handle document patches) nodeList
        return rootNode
 
-apply' :: Map Int [Patch action] -> (Int, JSNode) -> IO ()
-apply' patchMap (index, node) =
+apply' :: (action -> IO ()) -> JSDocument -> Map Int [Patch action] -> (Int, JSNode) -> IO ()
+apply' handle document patchMap (index, node) = do
+    putStrLn $ "apply' with index = " ++ show index
     case Map.lookup index patchMap of
       (Just patches) ->
-          mapM_ (apply'' node) patches
+          mapM_ (apply'' handle document node) patches
       Nothing -> error $ "Y NO PATCH? " ++ show index
 
-apply'' :: JSNode
+apply'' :: (action -> IO ())
+        -> JSDocument
+        -> JSNode
         -> Patch action
         -> IO ()
-apply'' node patch =
+apply'' handle document node patch =
     case patch of
       (VText b t) -> do oldLength <- getLength node
                         putStrLn $  "replaceData(0" ++ ", " ++ show oldLength ++ ", " ++ unpack t ++ ")"
@@ -60,15 +63,41 @@ apply'' node patch =
                         case (unpack k) of
                           "value" -> setValue e v
                           _ -> setAttribute e k v) [ (k,v) | Attr k v <- newProps ]
-      _ -> return ()
-
+      (Insert elem) ->
+          do mparent <- parentNode node
+             case mparent of
+               Nothing -> putStrLn $ "Can't appendChild because there is no parentNode"
+               (Just parent) ->
+                   do putStrLn $  "Insert --> " ++ show elem
+                      child <- renderHTML handle document elem
+                      appendChild parent child
+                      return ()
+      Remove ->
+          do mparent <- parentNode node
+             case mparent of
+               Nothing -> putStrLn $ "Can't removeChild because there is no parentNode"
+               (Just parent) ->
+                   do removeChild parent (Just node)
+                      return ()
+      VNode newElem ->
+          do mparent <- parentNode node
+             case mparent of
+               Nothing ->  putStrLn $ "Can't replaceChild because there is no parentNode"
+               (Just parent) ->
+                   do (Just newChild) <- renderHTML handle document newElem
+                      replaceChild parent newChild node
+                      return ()
+{-
+      p -> do putStrLn $ "Skipping patch " ++ show patch
+              return ()
+-}
 escape _ t = t
 
 
 -- FIXME: do not walk down DOM trees that contain no nodes if interest
 getNodes :: forall action.
             JSNode -- ^ root node of DOM
-         -> HTML action -- ^ virtual DOM that matches the current DOMe
+         -> HTML action -- ^ virtual DOM that matches the current DOM
          -> [Int] -- ^ nodes indices we want (using in-order numbering)
          -> IO [(Int, JSNode)]
 getNodes currNode vdom nodeIndices =
@@ -97,7 +126,7 @@ getNodes currNode vdom nodeIndices =
 --          error $ "Got CDATA but multiple indices, " ++ show is
       getNodes' currNode vdom@(Element _tag _attrs count children) is'' =
           do index <- get
-             case dropWhile (\i -> i < index) is'' of
+             case getInRange index count is'' of
                [] -> return []
                (i:is) ->
                    do liftIO $ putStrLn $ "Element index = " ++ show index ++ " looking for i = " ++ show i
@@ -107,7 +136,7 @@ getNodes currNode vdom nodeIndices =
                       liftIO $ putStrLn $ "vdom = " ++ show vdom
                       let is' = if (i == index) then is else (i:is)
                       childNodes' <- mapM (\i' -> do (Just c) <- item cs (fromIntegral i')
-                                                     liftIO $ putStrLn $ "i' = " ++ show i'
+                                                     liftIO $ putStrLn $ "l = " ++ show l ++ ", length children = " ++ show (length children) ++ ", i' = " ++ show i'
                                                      inc
                                                      getNodes' c (children!!i') is'
                                           ) [0..(l-1)]
@@ -115,3 +144,5 @@ getNodes currNode vdom nodeIndices =
                       then do liftIO $ putStrLn $ "match Element on index = " ++ show index
                               return $ (i, currNode) : (concat childNodes')
                       else return (concat childNodes')
+      getInRange index count indexes =
+          {- takeWhile (\i -> i <= index + count) $ -} dropWhile (\i -> i < index) indexes

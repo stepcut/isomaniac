@@ -18,6 +18,7 @@ flattenHTML h@(CDATA _ _) = h
 flattenHTML h@(Children _) = h
 flattenHTML (Element t acts attrs children)
 -}
+{-
 renderHTML :: forall action m. (MonadIO m) => (action -> IO ()) -> JSDocument -> HTML action -> m (Maybe JSNode)
 renderHTML _ doc (CDATA _ t) = fmap (fmap toJSNode) $ createJSTextNode doc t
 renderHTML handle doc (Element tag {- events -} attrs _ children) =
@@ -40,6 +41,7 @@ renderHTML handle doc (Element tag {- events -} attrs _ children) =
       handleEvent elem (eventType, toAction) =
           do cb <- asyncCallback AlwaysRetain (handle' elem toAction) -- FIXME: free ?
              addEventListener elem eventType cb False
+-}
 {-
 data MUV  model action = MUV
     { model  :: model
@@ -83,7 +85,7 @@ mainLoopRemote url h document body (MURV model update view) =
        let vdom = view model
        html <- renderHTML (handleAction queue) document vdom
        removeChildren body
-       appendJSChild body html
+       appendChild body html
        xhr <- newXMLHttpRequest
        cb <- asyncCallback AlwaysRetain (handleXHR queue xhr)
        addEventListener xhr "readystatechange" cb False
@@ -103,7 +105,7 @@ mainLoopRemote url h document body (MURV model update view) =
                  diffs = diff oldVDom vdom
              putStrLn $ "action --> " ++ show action
              putStrLn $ "diff --> " ++ show diffs
-             apply document body vdom diffs
+             apply (handleAction queue) document body oldVDom diffs
 --             html <- renderHTML (handleAction queue) document vdom
 --             removeChildren body
 --             appendJSChild body html

@@ -84,6 +84,16 @@ getLength self
 -- foreign import javascript unsafe "$1[\"length\"]" js_getLength ::
 --         JSRef NodeList -> IO Word
 
+
+-- * parentNode
+
+foreign import javascript unsafe "$1[\"parentNode\"]"
+        js_parentNode :: JSRef JSNode -> IO (JSRef JSNode)
+
+parentNode :: (MonadIO m, IsJSNode self ) => self -> m (Maybe JSNode)
+parentNode self =
+    liftIO (js_parentNode (unJSNode (toJSNode self)) >>= fromJSRef)
+
 -- * JSDocument
 
 newtype JSDocument = JSDocument (JSRef JSDocument) -- deriving Eq
@@ -199,17 +209,17 @@ getElementById self ident
       ((js_getElementsById (unJSDocument self) (toJSString ident))
        >>= fromJSRef)
 
--- * appendJSChild
+-- * appendChild
 
 foreign import javascript unsafe "$1[\"appendChild\"]($2)"
         js_appendChild :: JSRef JSNode -> JSRef JSNode -> IO (JSRef JSNode)
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.appendChild Mozilla Node.appendChild documentation>
 
-appendJSChild ::
+appendChild ::
             (MonadIO m, IsJSNode self, IsJSNode newChild) =>
               self -> Maybe newChild -> m (Maybe JSNode)
-appendJSChild self newChild
+appendChild self newChild
   = liftIO
       ((js_appendChild (unJSNode (toJSNode self))
           (maybe jsNull (unJSNode . toJSNode) newChild))
@@ -255,7 +265,7 @@ foreign import javascript unsafe "$1[\"removeChild\"]($2)"
         js_removeChild :: JSRef JSNode -> JSRef JSNode -> IO (JSRef JSNode)
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.removeChild Mozilla Node.removeChild documentation>
-removeChild ::
+removeChild ::  -- FIMXE: really a maybe?
             (MonadIO m, IsJSNode self, IsJSNode oldChild) =>
               self -> Maybe oldChild -> m (Maybe JSNode)
 removeChild self oldChild
@@ -263,6 +273,23 @@ removeChild self oldChild
       ((js_removeChild (unJSNode (toJSNode self))
           (maybe jsNull (unJSNode . toJSNode) oldChild))
          >>= fromJSRef)
+
+-- * replaceChild
+
+foreign import javascript unsafe "$1[\"replaceChild\"]($2, $3)"
+        js_replaceChild :: JSRef JSNode -> JSRef JSNode -> JSRef JSNode -> IO (JSRef JSNode)
+
+replaceChild ::
+            (MonadIO m, IsJSNode self, IsJSNode newChild, IsJSNode oldChild) =>
+              self -> newChild -> oldChild -> m (Maybe JSNode)
+replaceChild self newChild oldChild
+  = liftIO
+      (js_replaceChild (unJSNode (toJSNode self))
+                       ((unJSNode . toJSNode) newChild)
+                       ((unJSNode . toJSNode) oldChild)
+         >>= fromJSRef)
+
+-- * firstChild
 
 foreign import javascript unsafe "$1[\"firstChild\"]"
         js_getFirstChild :: JSRef JSNode -> IO (JSRef JSNode)
@@ -633,22 +660,22 @@ instance Show (HTML action) where
     show (CDATA b txt) = Text.unpack txt
 
 descendants :: [HTML action] -> Int
-descendants elems = sum [ d | Element _ _ d _ <- elems]
+descendants elems = sum [ d | Element _ _ d _ <- elems] + (length elems)
 
 {-
 flattenHTML :: HTML action -> HTML action
 flattenHTML h@(CDATA _ _) = h
 flattenHTML h@(Children _) = h
 flattenHTML (Element t acts attrs children)
--}{-
+-}
 renderHTML :: forall action m. (MonadIO m) => (action -> IO ()) -> JSDocument -> HTML action -> m (Maybe JSNode)
 renderHTML _ doc (CDATA _ t) = fmap (fmap toJSNode) $ createJSTextNode doc t
-renderHTML handle doc (Element tag {- events -} attrs children) =
+renderHTML handle doc (Element tag {- events -} attrs _ children) =
     do me <- createJSElement doc tag
        case me of
          Nothing -> return Nothing
          (Just e) ->
-             do mapM_ (\c -> appendJSChild e =<< renderHTML handle doc c) children
+             do mapM_ (\c -> appendChild e =<< renderHTML handle doc c) children
                 let events' = [ ev | Event ev <- attrs]
                     attrs'  = [ (k,v) | Attr k v <- attrs]
                 liftIO $ mapM_ (\(k, v) -> setAttribute e k v) attrs'
@@ -664,7 +691,7 @@ renderHTML handle doc (Element tag {- events -} attrs children) =
           do cb <- asyncCallback AlwaysRetain (handle' elem toAction) -- FIXME: free ?
              addEventListener elem eventType cb False
 
--}
+
 {-
 data MUV  model action = MUV
     { model  :: model

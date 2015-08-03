@@ -7,7 +7,7 @@ import qualified Data.Map as Map
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.Text as Text
-import Web.ISO.Types (HTML(..), Attr(..))
+import Web.ISO.Types (HTML(..), Attr(..), descendants)
 
 data Patch action
     = Remove
@@ -35,9 +35,10 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
              return i'
 
       diff' :: HTML action -> HTML action -> State Int [(Int, [Patch action])]
-      diff' (Element tagNameA attrsA _ childrenA) b@(Element tagNameB attrsB _ childrenB)
+      diff' (Element tagNameA attrsA descendantsA childrenA) b@(Element tagNameB attrsB _ childrenB)
           | tagNameA /= tagNameB =
               do index <- get
+                 put (index + descendantsA)
                  return [(index, [VNode b])]
           | otherwise =
               do propsPatches    <- diffAttrs attrsA attrsB
@@ -49,9 +50,14 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
             | otherwise =
                 do index <- get
                    return [(index, [VText escapeB txtB])]
-      diff' _ b =
+      diff' (Element _tagNameA _attrsA descendantsA _childrenA) b =
           do index <- get
-             return [(index, [Remove, VNode b])] -- FIXME: this does not work correctly if the node is not the last in the list of children
+             put (index + descendantsA)
+             return [(index, [VNode b])] -- FIXME: this does not work correctly if the node is not the last in the list of children
+                                                 -- FIXME: maybe we want VNode?
+      diff' (CDATA{}) b =
+          do index <- get
+             return [(index, [VNode b])] -- FIXME: this does not work correctly if the node is not the last in the list of children
                                                  -- FIXME: maybe we want VNode?
       -- FIXME: does not handle changes to Events
       -- FIXME: we should be able to add and remove single attributes
@@ -73,6 +79,7 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
              return $ d ++ diffs
       diffChildren (a:as) [] =
           do index <- inc
+             put (index + descendants [a])
              diffs <- diffChildren as []
              return $ (index, [Remove]) : diffs
       diffChildren [] cs =
