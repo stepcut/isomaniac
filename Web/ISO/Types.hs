@@ -633,6 +633,7 @@ data EventType
     = Change
     | Click
     | Input
+    | Blur
 
 data Attr action
     = Attr Text Text
@@ -642,6 +643,7 @@ instance ToJSString EventType where
     toJSString Change = toJSString "change"
     toJSString Click  = toJSString "click"
     toJSString Input  = toJSString "input"
+    toJSString Blur   = toJSString "blur"
 
 data HTML action
   = forall a. Element Text {- [(EventType, Parser a, a -> action)] -} [Attr action] Int [HTML action]

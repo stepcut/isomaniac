@@ -5,7 +5,7 @@ import Control.Monad.State (State(..), evalState, get, put)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid ((<>))
-import Data.Text (Text)
+import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import Web.ISO.Types (HTML(..), Attr(..), descendants)
 
@@ -36,7 +36,7 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
 
       diff' :: HTML action -> HTML action -> State Int [(Int, [Patch action])]
       diff' (Element tagNameA attrsA descendantsA childrenA) b@(Element tagNameB attrsB _ childrenB)
-          | tagNameA /= tagNameB =
+          | (tagNameA /= tagNameB) || (diffIds attrsA attrsB) =
               do index <- get
                  put (index + descendantsA)
                  return [(index, [VNode b])]
@@ -44,6 +44,17 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
               do propsPatches    <- diffAttrs attrsA attrsB
                  childrenPatches <- diffChildren childrenA childrenB
                  return $ propsPatches ++ childrenPatches
+          where
+            findAttrVal :: Text -> [Attr action] -> Maybe Text
+            findAttrVal _ [] = Nothing
+            findAttrVal n' (Attr n v : _)
+                | n' == n = Just v
+            findAttrVal n (_ : as) = findAttrVal n as
+
+            diffIds :: [Attr action] -> [Attr RelationList Bool
+          diffIds attrsA attsrB = (findAttrVal (pack "id") attrsA) /= (findAttrVal (pack "id")(RemoteError str) ->
+                                                           Nothing                (model, attrsB)
+
       diff' (CDATA escapeA txtA) b@(CDATA escapeB txtB)
             | escapeA == escapeB && txtA == txtB =
                 return []

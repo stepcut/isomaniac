@@ -79,8 +79,8 @@ data MURV  model action remote = MURV
     , view   :: model  -> HTML action
     }
 
-mainLoopRemote :: (ToJSString remote, Show action) => Text -> (Text -> action) -> JSDocument -> JSNode -> MURV model action remote -> IO ()
-mainLoopRemote url h document body (MURV model update view) =
+mainLoopRemote :: (ToJSString remote, Show action) => Text -> (Text -> action) -> JSDocument -> JSNode -> MURV model action remote -> Maybe action -> IO ()
+mainLoopRemote url h document body (MURV model update view) mInitAction =
     do queue <- atomically newTQueue
        let vdom = view model
        html <- renderHTML (handleAction queue) document vdom
@@ -90,6 +90,10 @@ mainLoopRemote url h document body (MURV model update view) =
        cb <- asyncCallback AlwaysRetain (handleXHR queue xhr)
        addEventListener xhr "readystatechange" cb False
 --       remoteLoop queue xhr
+       case mInitAction of
+         (Just initAction) ->
+             handleAction queue initAction
+         Nothing -> return ()
        loop xhr queue model vdom
     where
       handleXHR queue xhr =
@@ -116,8 +120,8 @@ mainLoopRemote url h document body (MURV model update view) =
                       sendString xhr (toJSString remote)
              loop xhr queue model' vdom
 
-murv :: (ToJSString remote, Show action) => Text -> (Text -> action) -> MURV model action remote -> IO ()
-murv url h m =
+murv :: (ToJSString remote, Show action) => Text -> (Text -> action) -> MURV model action remote -> (Maybe action) -> IO ()
+murv url h m initAction =
     do (Just document) <- currentDocument
        murv <- do mmurv <- getElementById document "murv"
                   case mmurv of
@@ -126,4 +130,4 @@ murv url h m =
                         do (Just bodyList) <- getElementsByTagName document "body"
                            (Just body)     <- item bodyList 0
                            return body
-       mainLoopRemote url h document murv m
+       mainLoopRemote url h document murv m initAction

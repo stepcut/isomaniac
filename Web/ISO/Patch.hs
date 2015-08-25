@@ -64,13 +64,14 @@ apply'' handle document node patch =
                           "value" -> setValue e v
                           _ -> setAttribute e k v) [ (k,v) | Attr k v <- newProps ]
       (Insert elem) ->
+          -- FIXME: don't get parent?
           do mparent <- parentNode node
              case mparent of
                Nothing -> putStrLn $ "Can't appendChild because there is no parentNode"
                (Just parent) ->
                    do putStrLn $  "Insert --> " ++ show elem
                       child <- renderHTML handle document elem
-                      appendChild parent child
+                      appendChild node child
                       return ()
       Remove ->
           do mparent <- parentNode node
