@@ -51,9 +51,8 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
                 | n' == n = Just v
             findAttrVal n (_ : as) = findAttrVal n as
 
-            diffIds :: [Attr action] -> [Attr RelationList Bool
-          diffIds attrsA attsrB = (findAttrVal (pack "id") attrsA) /= (findAttrVal (pack "id")(RemoteError str) ->
-                                                           Nothing                (model, attrsB)
+            diffIds :: [Attr action] -> [Attr action] -> Bool
+            diffIds attrsA attsrB = (findAttrVal (pack "id") attrsA) /= (findAttrVal (pack "id") attrsB)
 
       diff' (CDATA escapeA txtA) b@(CDATA escapeB txtB)
             | escapeA == escapeB && txtA == txtB =
