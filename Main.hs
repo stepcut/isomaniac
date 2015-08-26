@@ -61,4 +61,4 @@ counter = MURV
   }
 
 main :: IO ()
-main = murv "http://localhost:8000/api" Msg counter
+main = murv "http://localhost:8000/api" Msg counter Nothing
