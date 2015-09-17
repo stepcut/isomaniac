@@ -9,7 +9,7 @@ main =
     simpleHTTP nullConf handler
 
 handler = msum
-    [ dir "api" $ do -- decodeRequestBody (defaultBodyPolicy "/tmp" 100000 100000 100000)
+    [ dir "api" $ do
         method POST
         rq <- askRq
         (Just (Body s)) <- takeRequestBody rq

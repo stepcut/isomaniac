@@ -16,7 +16,7 @@ data Model = Model
     , msg   :: Text
     }
 
-{- Update -}
+{- Action -}
 data Action
     = Increment
     | Decrement
@@ -29,6 +29,7 @@ instance Show Action where
     show (Msg txt) = "Msg " ++ unpack txt
     show (Set _)   = "Set _"
 
+{- Update -}
 update' :: Action -> Model -> (Model, Maybe Text)
 update' action model =
     case action of
@@ -45,7 +46,7 @@ update' action model =
 view' :: Model -> HTML Action
 view' (Model c txt) =
     [hsx| <div>
-            <p>The Count is <% show c %></p>
+            <p>The count is <% show c %></p>
             <button onclick=Decrement>-</button>
             <button onclick=Increment>+</button>
             <input type="text" oninput=Set value=(pack $ show c) />

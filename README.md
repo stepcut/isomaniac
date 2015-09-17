@@ -3,7 +3,7 @@ ISOMANIAC
 
 This is a prototype of a Haskell-based framework for building user
 interfaces in the web browser. It is influenced by the
-Model-Update-View pattern, Virtual DOMs, and isomorphic frameworks.
+Model-Update-View pattern from Elm, Virtual DOMs, and isomorphic frameworks.
 
 MURV
 ----
@@ -45,7 +45,7 @@ murv :: (ToJSString remote, Show action) =>
      -> IO ()
 ```
 
-Let's back up and look at a simple counter example. The aim is to create a webpage with the follow features:
+Let's back up and look at a simple counter example. The aim is to create a webpage with the following features:
 
  1. a count value
  2. a paragraph that displays the current count
@@ -83,7 +83,7 @@ current count. The `Msg Text` action sets the message text. `Set
 the text input field.
 
 The `update'` function looks at the `action` and updates the `model`
-accordingly. For the `remote` action we are using simple string types
+accordingly. For the `remote` action we are using simple string values
 in this example. A more robust example would use a shared data type
 for communication.
 
@@ -138,7 +138,7 @@ main = murv "http://localhost:8000/api" Msg counter Nothing
 ```
 
 The URL is the remote API. The value returned from remote calls is
-turned into an action by appling the `Msg` constructor.
+turned into an action by applying the `Msg` constructor.
 
 Our server is very simple -- performing two tasks. One is to serve the
 app from the `Main.jsexe` directory. The other is to simply echo back
@@ -149,7 +149,7 @@ Virtual DOM
 
 In this example we re-render the entire HTML everytime the model is
 updated. However, updating the real DOM on every change can be very
-slow and also cause issues with the focus being lost.
+slow and also causes issues with the focus being lost.
 
 Behind the scenes, isomaniac works by patching the DOM rather than
 recreating it. It diffs the old and new `HTML` and creates patches
@@ -162,23 +162,23 @@ At present, isomaniac lacks composability. If we had a second widget
 with its own model, update, and view functions, there is no obvious
 way to combine them. The solution to this is likely to involve lenses.
 
-Another issue solidyfing the interface between the client and
+Another issue is solidifying the interface between the client and
 server. Using a simple algrebraic type is a good start, but as the
 application grows, it becomes clear that something fancier is
 desired. When the client sends a request it has expectations on what
 subset of values should be returned.
 
-The current Diff/Patch code mostly works, but definitely has at least
-one bug. A more robust implementation would be good. Additionally,
-obsolete event listeners need to be cleaned up. Additionally, the
+The current diff/patch code mostly works, but definitely has at least
+one bug. A more robust implementation is essential. Additionally,
+obsolete event listeners need to be cleaned up. And, in fact, the
 event listeners should probably be implemented differently
 anyway. Also, there are issues with the cursor position and updates to
-the DOM.
+the DOM. Possibly due to a hack to work around a different bug.
 
 Another aim of isomaniac is to ensure that something desirable happens
 if the user reloads the page. It's also desireable to be able to
 render the page content even if javascript is not enabled for the sake
-of search engines. The pure model used by isomaniac and the fact that
-the view function can be run on the server or client makes it seem
-reasonable that they features can be implemented with out too much
-difficulty.
+of search engines that do not support javascript. The pure model used
+by isomaniac and the fact that the view function can be run on the
+server or client makes it seem reasonable that these features can be
+implemented with out too much difficulty.

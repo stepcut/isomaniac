@@ -120,7 +120,12 @@ mainLoopRemote url h document body (MURV model update view) mInitAction =
                       sendString xhr (toJSString remote)
              loop xhr queue model' vdom
 
-murv :: (ToJSString remote, Show action) => Text -> (Text -> action) -> MURV model action remote -> (Maybe action) -> IO ()
+murv :: (ToJSString remote, Show action) =>
+        Text                     -- ^ remote API URL
+     -> (Text -> action)         -- ^ convert a remote response to an 'action'
+     -> MURV model action remote -- ^ model-update-remote-view record
+     -> (Maybe action)           -- ^ initial action
+     -> IO ()
 murv url h m initAction =
     do (Just document) <- currentDocument
        murv <- do mmurv <- getElementById document "murv"
