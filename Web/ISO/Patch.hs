@@ -4,10 +4,10 @@ module Web.ISO.Patch where
 
 import Control.Monad.State (StateT, evalStateT, get, put)
 import Control.Monad.Trans (MonadIO(..))
+import Data.List (sort)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (unpack)
-import GHCJS.Types (castRef)
 import Web.ISO.Diff (Patch(..))
 import Web.ISO.Types (HTML(..), Attr(..), JSDocument, JSElement(..), JSNode, childNodes, item, getFirstChild, getLength, replaceData, setAttribute, unJSNode, setValue, parentNode, removeChild, replaceChild, renderHTML, appendChild)
 
@@ -31,6 +31,7 @@ getNodes html nodeIndices =
 apply :: (action -> IO ()) -> JSDocument -> JSNode -> HTML action -> Map Int [Patch action] -> IO JSNode
 apply handle document rootNode vdom patches =
     do let indices = Map.keys patches
+       putStrLn $ "indices (keys) = " ++ show indices
        putStrLn $ "apply = " ++ show patches
        (Just first) <- getFirstChild rootNode
        nodeList <- getNodes first vdom indices
@@ -57,7 +58,7 @@ apply'' handle document node patch =
                         putStrLn $  "replaceData(0" ++ ", " ++ show oldLength ++ ", " ++ unpack t ++ ")"
                         replaceData node 0 oldLength (escape b t)
       (Props newProps) -> -- FIXME: doesn't handle changes to events.
-          do let e = JSElement $ castRef $ unJSNode node
+          do let e = JSElement $ unJSNode node
              putStrLn $ "set properties: " ++ show [ (k,v) | Attr k v <- newProps ]
              mapM_ (\(k, v) ->
                         case (unpack k) of

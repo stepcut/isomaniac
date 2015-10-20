@@ -6,32 +6,43 @@ import Data.Maybe (fromJust)
 import Data.Aeson.Types (Parser, Result(..), parse)
 import Data.Monoid ((<>))
 import Data.Text (Text)
+import qualified Data.JSString as JS
+import Data.JSString.Text (textToJSString, textFromJSString)
 import qualified Data.Text as Text
-import GHCJS.Foreign (ToJSString(..), FromJSString(..), ForeignRetention(AlwaysRetain), asyncCallback, jsNull)
+-- import GHCJS.Prim (ToJSString(..), FromJSString(..))
+-- import JavaScript.TypedArray.ArrayBuffer (ArrayBuffer)
+import GHCJS.Foreign (jsNull)
+import GHCJS.Foreign.Callback (Callback, asyncCallback)
 import GHCJS.Marshal (ToJSRef(..), FromJSRef(..))
-import GHCJS.Types (JSRef(..), JSString(..), JSFun, castRef, nullRef, isNull, isUndefined)
+import GHCJS.Types (JSRef(..), JSString(..),  nullRef, isNull, isUndefined)
 
-instance Eq (JSRef a) where
+instance Eq JSRef where
   a == b = js_eq a b
 
 foreign import javascript unsafe
-  "$1===$2" js_eq :: JSRef a -> JSRef a -> Bool
+  "$1===$2" js_eq :: JSRef  -> JSRef  -> Bool
 
+
+maybeJSNullOrUndefined :: JSRef -> Maybe JSRef
+maybeJSNullOrUndefined r | isNull r || isUndefined r = Nothing
+maybeJSNullOrUndefined r = Just r
+
+{-
 fromJSRefUnchecked :: (FromJSRef a) => JSRef a -> IO a
 fromJSRefUnchecked j =
     do x <- fromJSRef j
        case x of
          Nothing -> error "failed."
          (Just a) -> return a
-
+-}
 -- * JSNode
 
-newtype JSNode = JSNode (JSRef JSNode) -- deriving (Eq)
+newtype JSNode = JSNode JSRef
 
 unJSNode (JSNode o) = o
 
 instance ToJSRef JSNode where
-  toJSRef = return . unJSNode
+  toJSRef = toJSRef . unJSNode
   {-# INLINE toJSRef #-}
 
 instance FromJSRef JSNode where
@@ -48,7 +59,7 @@ instance IsJSNode JSNode where
 
 -- * JSNodeList
 
-newtype JSNodeList = JSNodeList (JSRef JSNodeList) -- deriving (Eq)
+newtype JSNodeList = JSNodeList JSRef
 
 unJSNodeList (JSNodeList o) = o
 
@@ -61,25 +72,25 @@ instance FromJSRef JSNodeList where
   {-# INLINE fromJSRef #-}
 
 instance IsJSNode JSNodeList where
-    toJSNode = JSNode . castRef . unJSNodeList
+    toJSNode = JSNode . unJSNodeList
 
 foreign import javascript unsafe "$1[\"item\"]($2)" js_item ::
-        JSRef JSNodeList -> Word -> IO (JSRef JSNode)
+        JSNodeList -> Word -> IO JSNode
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/NodeList.item Mozilla NodeList.item documentation>
 item ::
      (MonadIO m) => JSNodeList -> Word -> m (Maybe JSNode)
 item self index
   = liftIO
-      ((js_item (unJSNodeList self) index) >>= fromJSRef)
+      ((js_item (self) index) >>= return . Just)
 
 foreign import javascript unsafe "$1[\"length\"]" js_length ::
-        JSRef JSNode -> IO Word
+        JSNode -> IO Word
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/NodeList.item Mozilla NodeList.item documentation>
 getLength :: (MonadIO m, IsJSNode self) => self -> m Word
 getLength self
-  = liftIO (js_length (unJSNode (toJSNode self))) -- >>= fromJSRefUnchecked)
+  = liftIO (js_length ( (toJSNode self))) -- >>= fromJSRefUnchecked)
 
 -- foreign import javascript unsafe "$1[\"length\"]" js_getLength ::
 --         JSRef NodeList -> IO Word
@@ -88,15 +99,15 @@ getLength self
 -- * parentNode
 
 foreign import javascript unsafe "$1[\"parentNode\"]"
-        js_parentNode :: JSRef JSNode -> IO (JSRef JSNode)
+        js_parentNode :: JSNode -> IO JSRef
 
-parentNode :: (MonadIO m, IsJSNode self ) => self -> m (Maybe JSNode)
+parentNode :: (MonadIO m, IsJSNode self) => self -> m (Maybe JSNode)
 parentNode self =
-    liftIO (js_parentNode (unJSNode (toJSNode self)) >>= fromJSRef)
+    liftIO (fromJSRef =<< js_parentNode (toJSNode self))
 
 -- * JSDocument
 
-newtype JSDocument = JSDocument (JSRef JSDocument) -- deriving Eq
+newtype JSDocument = JSDocument JSRef
 
 unJSDocument (JSDocument o) = o
 
@@ -108,29 +119,25 @@ instance FromJSRef JSDocument where
   fromJSRef = return . fmap JSDocument . maybeJSNullOrUndefined
   {-# INLINE fromJSRef #-}
 
-maybeJSNullOrUndefined :: JSRef a -> Maybe (JSRef a)
-maybeJSNullOrUndefined r | isNull r || isUndefined r = Nothing
-maybeJSNullOrUndefined r = Just r
-
 instance IsJSNode JSDocument where
-    toJSNode = JSNode . castRef . unJSDocument
+    toJSNode = JSNode . unJSDocument
 
 foreign import javascript unsafe "new window[\"Document\"]()"
-        js_newDocument :: IO (JSRef JSDocument)
+        js_newDocument :: IO JSDocument
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Document Mozilla Document documentation>
 newJSDocument :: (MonadIO m) => m JSDocument
-newJSDocument = liftIO (js_newDocument >>= fromJSRefUnchecked)
+newJSDocument = liftIO js_newDocument
 
 foreign import javascript unsafe "$r = document"
-  ghcjs_currentDocument :: IO (JSRef JSDocument)
+  ghcjs_currentDocument :: IO JSDocument
 
 currentDocument :: IO (Maybe JSDocument)
-currentDocument = fmap JSDocument . maybeJSNullOrUndefined <$> ghcjs_currentDocument
+currentDocument = Just <$> ghcjs_currentDocument
 
 -- * JSElement
 
-newtype JSElement = JSElement (JSRef JSElement) -- deriving (Eq)
+newtype JSElement = JSElement JSRef
 
 unJSElement (JSElement o) = o
 
@@ -143,87 +150,89 @@ instance FromJSRef JSElement where
   {-# INLINE fromJSRef #-}
 
 instance IsJSNode JSElement where
-    toJSNode = JSNode . castRef . unJSElement
+    toJSNode = JSNode . unJSElement
 
 -- * createJSElement
 
 foreign import javascript unsafe "$1[\"createElement\"]($2)"
         js_createJSElement ::
-        JSRef JSDocument -> JSString -> IO (JSRef JSElement)
+        JSDocument -> JSString -> IO JSElement
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/JSDocument.createJSElement Mozilla JSDocument.createJSElement documentation>
 createJSElement ::
-              (MonadIO m, ToJSString tagName) =>
-                JSDocument -> tagName -> m (Maybe JSElement)
+              (MonadIO m) =>
+                JSDocument -> Text -> m (Maybe JSElement)
 createJSElement document tagName
-  = liftIO ((js_createJSElement (unJSDocument document) (toJSString tagName))
-            >>= fromJSRef)
+  = liftIO ((js_createJSElement document (textToJSString tagName))
+            >>= return . Just)
 
 -- * childNodes
 
 foreign import javascript unsafe "$1[\"childNodes\"]"
-        js_childNodes :: JSRef JSNode -> IO (JSRef JSNodeList)
+        js_childNodes :: JSNode -> IO JSNodeList
 
 childNodes :: (MonadIO m, IsJSNode self) => self -> m JSNodeList
 childNodes self
-    = liftIO ((js_childNodes (unJSNode (toJSNode self))) >>= fromJSRefUnchecked)
+    = liftIO (js_childNodes (toJSNode self))
 
 -- * getElementsByName
 
 foreign import javascript unsafe "$1[\"getElementsByName\"]($2)"
         js_getElementsByName ::
-        JSRef JSDocument -> JSString -> IO (JSRef JSNodeList)
+        JSDocument -> JSString -> IO JSNodeList
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.getElementsByName Mozilla Document.getElementsByName documentation>
 getElementsByName ::
-                  (MonadIO m, ToJSString elementName) =>
-                    JSDocument -> elementName -> m (Maybe JSNodeList)
+                  (MonadIO m) =>
+                    JSDocument -> JSString -> m (Maybe JSNodeList)
 getElementsByName self elementName
   = liftIO
-      ((js_getElementsByName (unJSDocument self)) (toJSString elementName)
-       >>= fromJSRef)
+      ((js_getElementsByName self) elementName
+       >>= return . Just)
 
 foreign import javascript unsafe "$1[\"getElementsByTagName\"]($2)"
         js_getElementsByTagName ::
-        JSRef JSDocument -> JSString -> IO (JSRef JSNodeList)
+        JSDocument -> JSString -> IO JSNodeList
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.getElementsByTagName Mozilla Document.getElementsByTagName documentation>
 getElementsByTagName ::
-                     (MonadIO m, ToJSString tagname) =>
-                       JSDocument -> tagname -> m (Maybe JSNodeList)
+                     (MonadIO m) =>
+                       JSDocument -> JSString -> m (Maybe JSNodeList)
 getElementsByTagName self tagname
   = liftIO
-      ((js_getElementsByTagName (unJSDocument self) (toJSString tagname))
-       >>= fromJSRef)
+      ((js_getElementsByTagName self tagname)
+       >>= return . Just)
 
 foreign import javascript unsafe "$1[\"getElementById\"]($2)"
         js_getElementsById ::
-        JSRef JSDocument -> JSString -> IO (JSRef JSElement)
+        JSDocument -> JSString -> IO JSElement
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.getElementsByTagName Mozilla Document.getElementsById documentation>
 getElementById ::
-                     (MonadIO m, ToJSString tagname) =>
-                       JSDocument -> tagname -> m (Maybe JSElement)
+                     (MonadIO m) =>
+                       JSDocument -> JSString -> m (Maybe JSElement)
 getElementById self ident
   = liftIO
-      ((js_getElementsById (unJSDocument self) (toJSString ident))
-       >>= fromJSRef)
+      ((js_getElementsById self ident)
+       >>= return . Just)
 
 -- * appendChild
 
 foreign import javascript unsafe "$1[\"appendChild\"]($2)"
-        js_appendChild :: JSRef JSNode -> JSRef JSNode -> IO (JSRef JSNode)
+        js_appendChild :: JSNode -> JSNode -> IO JSNode
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.appendChild Mozilla Node.appendChild documentation>
 
-appendChild ::
-            (MonadIO m, IsJSNode self, IsJSNode newChild) =>
-              self -> Maybe newChild -> m (Maybe JSNode)
+appendChild :: (MonadIO m, IsJSNode self, IsJSNode newChild) =>
+               self
+            -> Maybe newChild
+            -> m (Maybe JSNode)
 appendChild self newChild
   = liftIO
-      ((js_appendChild (unJSNode (toJSNode self))
-          (maybe jsNull (unJSNode . toJSNode) newChild))
-         >>= fromJSRef)
+      ((js_appendChild ( (toJSNode self))
+          (maybe (JSNode jsNull) ( toJSNode) newChild))
+         >>= return . Just)
+
 {-
 probably broken on IE9
 
@@ -244,25 +253,25 @@ setTextContent self content =
 
 -- FIMXE: perhaps only a TextNode?
 foreign import javascript unsafe "$1[\"replaceData\"]($2, $3, $4)" js_replaceData
-    :: JSRef JSNode
+    :: JSNode
     -> Word
     -> Word
     -> JSString
     -> IO ()
 
-replaceData :: (MonadIO m, IsJSNode self, ToJSString string) =>
+replaceData :: (MonadIO m, IsJSNode self) =>
                self
             -> Word
             -> Word
-            -> string
+            -> Text
             -> m ()
 replaceData self start length string =
-    liftIO (js_replaceData (unJSNode (toJSNode self)) start length (toJSString string))
+    liftIO (js_replaceData (toJSNode self) start length (textToJSString string))
 
 -- * removeChild
 
 foreign import javascript unsafe "$1[\"removeChild\"]($2)"
-        js_removeChild :: JSRef JSNode -> JSRef JSNode -> IO (JSRef JSNode)
+        js_removeChild :: JSNode -> JSNode -> IO JSNode
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.removeChild Mozilla Node.removeChild documentation>
 removeChild ::  -- FIMXE: really a maybe?
@@ -270,34 +279,34 @@ removeChild ::  -- FIMXE: really a maybe?
               self -> Maybe oldChild -> m (Maybe JSNode)
 removeChild self oldChild
   = liftIO
-      ((js_removeChild (unJSNode (toJSNode self))
-          (maybe jsNull (unJSNode . toJSNode) oldChild))
-         >>= fromJSRef)
+      ((js_removeChild (toJSNode self)
+          (maybe (JSNode jsNull) toJSNode oldChild))
+         >>= return . Just)
 
 -- * replaceChild
 
 foreign import javascript unsafe "$1[\"replaceChild\"]($2, $3)"
-        js_replaceChild :: JSRef JSNode -> JSRef JSNode -> JSRef JSNode -> IO (JSRef JSNode)
+        js_replaceChild :: JSNode -> JSNode -> JSNode -> IO JSNode
 
 replaceChild ::
             (MonadIO m, IsJSNode self, IsJSNode newChild, IsJSNode oldChild) =>
               self -> newChild -> oldChild -> m (Maybe JSNode)
 replaceChild self newChild oldChild
   = liftIO
-      (js_replaceChild (unJSNode (toJSNode self))
-                       ((unJSNode . toJSNode) newChild)
-                       ((unJSNode . toJSNode) oldChild)
-         >>= fromJSRef)
+      (js_replaceChild ((toJSNode self))
+                       ((toJSNode) newChild)
+                       ((toJSNode) oldChild)
+         >>= return . Just)
 
 -- * firstChild
 
 foreign import javascript unsafe "$1[\"firstChild\"]"
-        js_getFirstChild :: JSRef JSNode -> IO (JSRef JSNode)
+        js_getFirstChild :: JSNode -> IO JSRef
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.firstChild Mozilla Node.firstChild documentation>
 getFirstChild :: (MonadIO m, IsJSNode self) => self -> m (Maybe JSNode)
 getFirstChild self
-  = liftIO ((js_getFirstChild (unJSNode (toJSNode self))) >>= fromJSRef)
+  = liftIO ((js_getFirstChild ((toJSNode self))) >>= fromJSRef)
 
 removeChildren
     :: (MonadIO m, IsJSNode self) =>
@@ -312,35 +321,35 @@ removeChildren self =
                 removeChildren self
 
 foreign import javascript unsafe "$1[\"setAttribute\"]($2, $3)"
-        js_setAttribute :: JSRef JSElement -> JSString -> JSString -> IO ()
+        js_setAttribute :: JSElement -> JSString -> JSString -> IO ()
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Element.setAttribute Mozilla Element.setAttribute documentation>
 setAttribute ::
-             (MonadIO m, ToJSString name, ToJSString value) =>
-               JSElement -> name -> value -> m ()
+             (MonadIO m) =>
+               JSElement -> Text -> Text -> m ()
 setAttribute self name value
   = liftIO
-      (js_setAttribute (unJSElement self) (toJSString name) (toJSString value))
+      (js_setAttribute self (textToJSString name) (textToJSString value))
 
 -- * value
 
 foreign import javascript unsafe "$1[\"value\"]"
-        js_getValue :: JSRef JSNode -> IO (JSRef JSString)
+        js_getValue :: JSNode -> IO JSString
 
 getValue :: (MonadIO m, IsJSNode self) => self -> m (Maybe JSString)
 getValue self
-  = liftIO ((js_getValue (unJSNode (toJSNode self))) >>= fromJSRef)
+  = liftIO ((js_getValue (toJSNode self)) >>= return . Just)
 
 foreign import javascript unsafe "$1[\"value\"] = $2"
-        js_setValue :: JSRef JSNode -> JSString -> IO ()
+        js_setValue :: JSNode -> JSString -> IO ()
 
-setValue :: (MonadIO m, IsJSNode self, ToJSString str) => self -> str -> m ()
+setValue :: (MonadIO m, IsJSNode self) => self -> Text -> m ()
 setValue self str =
-    liftIO (js_setValue (unJSNode (toJSNode self)) (toJSString str))
+    liftIO (js_setValue (toJSNode self) (textToJSString str))
 
 -- * JSTextNode
 
-newtype JSTextNode = JSTextNode (JSRef JSTextNode) -- deriving (Eq)
+newtype JSTextNode = JSTextNode JSRef -- deriving (Eq)
 
 unJSTextNode (JSTextNode o) = o
 
@@ -353,26 +362,26 @@ instance FromJSRef JSTextNode where
   {-# INLINE fromJSRef #-}
 
 instance IsJSNode JSTextNode where
-    toJSNode = JSNode . castRef . unJSTextNode
+    toJSNode = JSNode . unJSTextNode
 
 -- * createTextNode
 
 foreign import javascript unsafe "$1[\"createTextNode\"]($2)"
-        js_createTextNode :: JSRef JSDocument -> JSString -> IO (JSRef JSTextNode)
+        js_createTextNode :: JSDocument -> JSString -> IO JSTextNode
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Document.createTextNode Mozilla Document.createTextNode documentation>
 createJSTextNode ::
-               (MonadIO m, ToJSString data') =>
-                 JSDocument -> data' -> m (Maybe JSTextNode)
+               (MonadIO m) =>
+                 JSDocument -> Text -> m (Maybe JSTextNode)
 createJSTextNode document data'
   = liftIO
-      ((js_createTextNode (unJSDocument document)
-          (toJSString data'))
-         >>= fromJSRef)
+      ((js_createTextNode document
+          (textToJSString data'))
+         >>= return . Just)
 
 -- * Events
 
-newtype EventTarget = EventTarget { unEventTarget :: JSRef EventTarget }
+newtype EventTarget = EventTarget { unEventTarget :: JSRef }
 
 instance Eq (EventTarget) where
   (EventTarget a) == (EventTarget b) = js_eq a b
@@ -390,33 +399,41 @@ class IsEventTarget o where
 --    toEventTarget = EventTarget
 
 instance IsEventTarget JSElement where
-    toEventTarget = EventTarget . castRef . unJSElement
+    toEventTarget = EventTarget . unJSElement
 
 -- FIXME: Element is overly restrictive
 foreign import javascript unsafe "$1[\"addEventListener\"]($2, $3,\n$4)"
    js_addEventListener ::
-       JSRef EventTarget -> JSString -> JSFun (IO ()) -> Bool -> IO ()
+       EventTarget -> JSString -> Callback (IO ()) -> Bool -> IO ()
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/EventTarget.addEventListener Mozilla EventTarget.addEventListener documentation>
 addEventListener ::
-                 (MonadIO m, IsEventTarget self, ToJSString type') =>
-                   self -> type' -> JSFun (IO ()) -> Bool -> m ()
+                 (MonadIO m, IsEventTarget self) =>
+                   self -> EventType -> Callback (IO ()) -> Bool -> m ()
 addEventListener self type' listener useCapture
   = liftIO
-      (js_addEventListener (unEventTarget (toEventTarget self))
-         (toJSString type')
+      (js_addEventListener (toEventTarget self)
+         type''
          listener
 --         (maybe jsNull pToJSRef listener)
          useCapture)
+             where
+               type'' = case type' of
+                          Change -> JS.pack "change"
+                          Click  -> JS.pack "click"
+                          Input  -> JS.pack "input"
+                          Blur   -> JS.pack "blur"
+                          ReadyStateChange -> JS.pack "readystatechange"
+
 
 -- * XMLHttpRequest
-newtype XMLHttpRequest = XMLHttpRequest { unXMLHttpRequest :: JSRef XMLHttpRequest }
+newtype XMLHttpRequest = XMLHttpRequest { unXMLHttpRequest :: JSRef }
 
 instance Eq (XMLHttpRequest) where
   (XMLHttpRequest a) == (XMLHttpRequest b) = js_eq a b
 
 instance IsEventTarget XMLHttpRequest where
-    toEventTarget = EventTarget . castRef . unXMLHttpRequest
+    toEventTarget = EventTarget . unXMLHttpRequest
 
 {-
 instance PToJSRef XMLHttpRequest where
@@ -436,27 +453,39 @@ instance FromJSRef XMLHttpRequest where
   {-# INLINE fromJSRef #-}
 
 foreign import javascript unsafe "new window[\"XMLHttpRequest\"]()"
-        js_newXMLHttpRequest :: IO (JSRef XMLHttpRequest)
+        js_newXMLHttpRequest :: IO XMLHttpRequest
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest Mozilla XMLHttpRequest documentation>
 newXMLHttpRequest :: (MonadIO m) => m XMLHttpRequest
 newXMLHttpRequest
-  = liftIO (js_newXMLHttpRequest >>= fromJSRefUnchecked)
+  = liftIO js_newXMLHttpRequest
 
 foreign import javascript unsafe "$1[\"open\"]($2, $3, $4)"
         js_open ::
-        JSRef XMLHttpRequest ->
+        XMLHttpRequest ->
           JSString -> JSString -> Bool -> {- JSString -> JSString -> -} IO ()
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.open Mozilla XMLHttpRequest.open documentation>
 open ::
-     (MonadIO m, ToJSString method, ToJSString url) =>
-       XMLHttpRequest -> method -> url -> Bool -> m ()
+     (MonadIO m) =>
+       XMLHttpRequest -> Text -> Text -> Bool -> m ()
 open self method url async
-  = liftIO
-      (js_open (unXMLHttpRequest self) (toJSString method)
-         (toJSString url)
-         async)
+  = liftIO (js_open self (textToJSString method) (textToJSString url) async)
+
+foreign import javascript unsafe "$1[\"setRequestHeader\"]($2,$3)"
+        js_setRequestHeader
+            :: XMLHttpRequest
+            -> JSString
+            -> JSString
+            -> IO ()
+
+setRequestHeader :: (MonadIO m) =>
+                    XMLHttpRequest
+                 -> Text
+                 -> Text
+                 -> m ()
+setRequestHeader self header value =
+    liftIO (js_setRequestHeader self (textToJSString header) (textToJSString value))
 
 -- foreign import javascript interruptible "h$dom$sendXHR($1, $2, $c);" js_send :: JSRef XMLHttpRequest -> JSRef () -> IO Int
 {-
@@ -465,34 +494,56 @@ send :: (MonadIO m) => XMLHttpRequest -> m ()
 send self = liftIO $ js_send (unXMLHttpRequest self) jsNull >> return () -- >>= throwXHRError
 -}
 
-foreign import javascript unsafe "$1[\"send\"]($2)" js_sendString ::
-        JSRef XMLHttpRequest -> JSString -> IO ()
+foreign import javascript unsafe "$1[\"send\"]()" js_send ::
+        XMLHttpRequest -> IO ()
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest#send() Mozilla XMLHttpRequest.send documentation>
-sendString :: (MonadIO m, ToJSRef str, ToJSString str) => XMLHttpRequest -> str -> m ()
+send :: (MonadIO m) => XMLHttpRequest -> m ()
+send self =
+    liftIO $ js_send self >> return () -- >>= throwXHRError
+
+foreign import javascript unsafe "$1[\"send\"]($2)" js_sendString ::
+        XMLHttpRequest -> JSString -> IO ()
+
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest#send() Mozilla XMLHttpRequest.send documentation>
+sendString :: (MonadIO m) => XMLHttpRequest -> JSString -> m ()
 sendString self str =
-    liftIO $ do r <- toJSRef str
-                js_sendString (unXMLHttpRequest self) (castRef r) >> return () -- >>= throwXHRError
+    liftIO $ js_sendString self str >> return () -- >>= throwXHRError
+
+foreign import javascript unsafe "$1[\"send\"]($2)" js_sendData ::
+        XMLHttpRequest
+    -> JSRef
+    -> IO ()
 
 foreign import javascript unsafe "$1[\"readyState\"]"
-        js_getReadyState :: JSRef XMLHttpRequest -> IO Word
+        js_getReadyState :: XMLHttpRequest -> IO Word
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.readyState Mozilla XMLHttpRequest.readyState documentation>
 getReadyState :: (MonadIO m) => XMLHttpRequest -> m Word
 getReadyState self
-  = liftIO (js_getReadyState (unXMLHttpRequest self))
+  = liftIO (js_getReadyState self)
 
 foreign import javascript unsafe "$1[\"responseType\"]"
         js_getResponseType ::
-        JSRef XMLHttpRequest -> IO (JSRef XMLHttpRequestResponseType)
+        XMLHttpRequest -> IO JSString -- XMLHttpRequestResponseType
 
 -- | <Https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.responseType Mozilla XMLHttpRequest.responseType documentation>
 getResponseType ::
-                (MonadIO m) => XMLHttpRequest -> m XMLHttpRequestResponseType
+                (MonadIO m) => XMLHttpRequest -> m Text
 getResponseType self
-  = liftIO
-      ((js_getResponseType (unXMLHttpRequest self)) >>=
-         fromJSRefUnchecked)
+  = liftIO (textFromJSString <$> js_getResponseType self)
+
+
+foreign import javascript unsafe "$1[\"responseType\"] = $2"
+        js_setResponseType ::
+        XMLHttpRequest -> JSString -> IO () -- XMLHttpRequestResponseType
+
+setResponseType :: (MonadIO m) =>
+                   XMLHttpRequest
+                -> Text
+                -> m ()
+setResponseType self typ =
+    liftIO $ js_setResponseType self (textToJSString typ)
 
 data XMLHttpRequestResponseType = XMLHttpRequestResponseType
                                 | XMLHttpRequestResponseTypeArraybuffer
@@ -501,27 +552,27 @@ data XMLHttpRequestResponseType = XMLHttpRequestResponseType
                                 | XMLHttpRequestResponseTypeJson
                                 | XMLHttpRequestResponseTypeText
 foreign import javascript unsafe "\"\""
-        js_XMLHttpRequestResponseType :: JSRef XMLHttpRequestResponseType
+        js_XMLHttpRequestResponseType :: JSRef -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"arraybuffer\""
         js_XMLHttpRequestResponseTypeArraybuffer ::
-        JSRef XMLHttpRequestResponseType
+        JSRef -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"blob\""
         js_XMLHttpRequestResponseTypeBlob ::
-        JSRef XMLHttpRequestResponseType
+        JSRef -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"document\""
         js_XMLHttpRequestResponseTypeDocument ::
-        JSRef XMLHttpRequestResponseType
+        JSRef -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"json\""
         js_XMLHttpRequestResponseTypeJson ::
-        JSRef XMLHttpRequestResponseType
+        JSRef -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"text\""
         js_XMLHttpRequestResponseTypeText ::
-        JSRef XMLHttpRequestResponseType
+        JSRef -- XMLHttpRequestResponseType
 
 {-
 instance PToJSRef XMLHttpRequestResponseType where
@@ -586,45 +637,47 @@ instance FromJSRef XMLHttpRequestResponseType where
                 return (Just XMLHttpRequestResponseTypeJson)
             | x == js_XMLHttpRequestResponseTypeText =
                 return (Just XMLHttpRequestResponseTypeText)
-{-
+
 foreign import javascript unsafe "$1[\"response\"]" js_getResponse
-        :: JSRef XMLHttpRequest -> IO (JSRef GObject)
+        :: XMLHttpRequest
+        -> IO JSRef
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.response Mozilla XMLHttpRequest.response documentation>
-getResponse :: (MonadIO m) => XMLHttpRequest -> m (Maybe GObject)
-getResponse self
-  = liftIO ((js_getResponse (unXMLHttpRequest self)) >>= fromJSRef)
--}
+getResponse :: (MonadIO m) =>
+               XMLHttpRequest
+            -> m JSRef
+getResponse self =
+    liftIO (js_getResponse self)
 
 foreign import javascript unsafe "$1[\"responseText\"]"
-        js_getResponseText :: JSRef XMLHttpRequest -> IO JSString
+        js_getResponseText :: XMLHttpRequest -> IO JSString
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.responseText Mozilla XMLHttpRequest.responseText documentation> 
 getResponseText ::
-                (MonadIO m, FromJSString result) => XMLHttpRequest -> m result
+                (MonadIO m) => XMLHttpRequest -> m Text
 getResponseText self
   = liftIO
-      (fromJSString <$> (js_getResponseText (unXMLHttpRequest self)))
+      (textFromJSString <$> js_getResponseText self)
 
 foreign import javascript unsafe "$1[\"status\"]" js_getStatus ::
-        JSRef XMLHttpRequest -> IO Word
+        XMLHttpRequest -> IO Word
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.status Mozilla XMLHttpRequest.status documentation>
 getStatus :: (MonadIO m) => XMLHttpRequest -> m Word
-getStatus self = liftIO (js_getStatus (unXMLHttpRequest self))
+getStatus self = liftIO (js_getStatus self)
 
 foreign import javascript unsafe "$1[\"statusText\"]"
-        js_getStatusText :: JSRef XMLHttpRequest -> IO JSString
+        js_getStatusText :: XMLHttpRequest -> IO JSString
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.statusText Mozilla XMLHttpRequest.statusText documentation>
 getStatusText ::
-              (MonadIO m, FromJSString result) => XMLHttpRequest -> m result
+              (MonadIO m) => XMLHttpRequest -> m Text
 getStatusText self
   = liftIO
-      (fromJSString <$> (js_getStatusText (unXMLHttpRequest self)))
+      (textFromJSString <$> js_getStatusText self)
 
 foreign import javascript unsafe "$1[\"responseURL\"]"
-        js_getResponseURL :: JSRef XMLHttpRequest -> IO JSString
+        js_getResponseURL :: XMLHttpRequest -> IO JSString
 
 
 -- * Pure HTML
@@ -634,17 +687,18 @@ data EventType
     | Click
     | Input
     | Blur
+    | ReadyStateChange
 
 data Attr action
     = Attr Text Text
     | Event (EventType, Maybe JSString -> action)
-
+{-
 instance ToJSString EventType where
     toJSString Change = toJSString "change"
     toJSString Click  = toJSString "click"
     toJSString Input  = toJSString "input"
     toJSString Blur   = toJSString "blur"
-
+-}
 data HTML action
   = forall a. Element Text {- [(EventType, Parser a, a -> action)] -} [Attr action] Int [HTML action]
   | CDATA Bool Text
@@ -690,7 +744,7 @@ renderHTML handle doc (Element tag {- events -} attrs _ children) =
              handle (toAction ms)
       handleEvent :: JSElement -> (EventType, Maybe JSString -> action) -> IO ()
       handleEvent elem (eventType, toAction) =
-          do cb <- asyncCallback AlwaysRetain (handle' elem toAction) -- FIXME: free ?
+          do cb <- asyncCallback (handle' elem toAction) -- FIXME: free ?
              addEventListener elem eventType cb False
 
 
@@ -775,3 +829,4 @@ murv url h m =
                            return body
        mainLoopRemote url h document murv m
 -}
+

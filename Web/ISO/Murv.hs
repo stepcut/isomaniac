@@ -1,11 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Web.ISO.Murv where
 
 import Control.Concurrent.STM (atomically)
 import Control.Concurrent.STM.TQueue (TQueue, newTQueue, readTQueue, writeTQueue)
 import Control.Monad.Trans (MonadIO(..))
 import Data.Text (Text)
-import GHCJS.Foreign (ToJSString(..), FromJSString(..), ForeignRetention(AlwaysRetain), asyncCallback, jsNull)
+import Data.JSString.Text (textToJSString)
+import GHCJS.Foreign (jsNull)
+import GHCJS.Foreign.Callback (asyncCallback)
 import GHCJS.Types (JSString(..))
 import Web.ISO.Diff
 import Web.ISO.Patch
@@ -79,7 +82,7 @@ data MURV  model action remote = MURV
     , view   :: model  -> HTML action
     }
 
-mainLoopRemote :: (ToJSString remote, Show action) => Text -> (Text -> action) -> JSDocument -> JSNode -> MURV model action remote -> Maybe action -> IO ()
+mainLoopRemote :: (Show action) => Text -> (Text -> action) -> JSDocument -> JSNode -> MURV model action Text -> Maybe action -> IO ()
 mainLoopRemote url h document body (MURV model update view) mInitAction =
     do queue <- atomically newTQueue
        let vdom = view model
@@ -87,8 +90,8 @@ mainLoopRemote url h document body (MURV model update view) mInitAction =
        removeChildren body
        appendChild body html
        xhr <- newXMLHttpRequest
-       cb <- asyncCallback AlwaysRetain (handleXHR queue xhr)
-       addEventListener xhr "readystatechange" cb False
+       cb <- asyncCallback (handleXHR queue xhr)
+       addEventListener xhr ReadyStateChange cb False
 --       remoteLoop queue xhr
        case mInitAction of
          (Just initAction) ->
@@ -117,13 +120,13 @@ mainLoopRemote url h document body (MURV model update view) mInitAction =
                Nothing -> return ()
                (Just remote) ->
                    do open xhr "POST" url True
-                      sendString xhr (toJSString remote)
+                      sendString xhr (textToJSString remote)
              loop xhr queue model' vdom
 
-murv :: (ToJSString remote, Show action) =>
+murv :: (Show action) =>
         Text                     -- ^ remote API URL
      -> (Text -> action)         -- ^ convert a remote response to an 'action'
-     -> MURV model action remote -- ^ model-update-remote-view record
+     -> MURV model action Text -- ^ model-update-remote-view record
      -> (Maybe action)           -- ^ initial action
      -> IO ()
 murv url h m initAction =

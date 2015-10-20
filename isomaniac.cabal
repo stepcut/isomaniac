@@ -10,6 +10,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Web.ISO.Diff
+                       Web.ISO.Patch
                        Web.ISO.HSX
                        Web.ISO.Murv
                        Web.ISO.Types

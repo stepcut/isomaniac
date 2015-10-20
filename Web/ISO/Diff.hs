@@ -25,7 +25,7 @@ instance Show (Patch action) where
 
 
 diff :: forall action. HTML action -> HTML action -> Map Int [Patch action]
-diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
+diff a b = Map.fromListWith (++) (evalState (diff' a b) 0)
     where
       inc :: State Int Int
       inc =
@@ -42,7 +42,8 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
                  return [(index, [VNode b])]
           | otherwise =
               do propsPatches    <- diffAttrs attrsA attrsB
-                 childrenPatches <- diffChildren childrenA childrenB
+                 index <- get
+                 childrenPatches <- diffChildren index childrenA childrenB
                  return $ propsPatches ++ childrenPatches
           where
             findAttrVal :: Text -> [Attr action] -> Maybe Text
@@ -80,18 +81,18 @@ diff a b = Map.fromAscListWith (++) (evalState (diff' a b) 0)
              else do index <- get
                      return [(index, [Props attrsB])]
       -- FIXME: handle reordered children
-      diffChildren :: [HTML action] -> [HTML action] -> State Int [(Int, [Patch action])]
-      diffChildren [] [] = return []
-      diffChildren (a:as) (b:bs) =
+      diffChildren :: Int -> [HTML action] -> [HTML action] -> State Int [(Int, [Patch action])]
+      diffChildren _ [] [] = return []
+      diffChildren pid (a:as) (b:bs) =
           do index <- inc
              d <- diff' a b
-             diffs <- diffChildren as bs
+             diffs <- diffChildren pid as bs
              return $ d ++ diffs
-      diffChildren (a:as) [] =
+      diffChildren pid (a:as) [] =
           do index <- inc
              put (index + descendants [a])
-             diffs <- diffChildren as []
+             diffs <- diffChildren pid as []
              return $ (index, [Remove]) : diffs
-      diffChildren [] cs =
+      diffChildren pid [] cs =
           do index <- get
-             return $ [(index, map Insert cs)]
+             return $ [(pid, map Insert cs)]

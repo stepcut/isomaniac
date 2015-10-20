@@ -1,9 +1,11 @@
 ISOMANIAC
 =========
 
-This is a prototype of a Haskell-based framework for building user
-interfaces in the web browser. It is influenced by the
-Model-Update-View pattern from Elm, Virtual DOMs, and isomorphic frameworks.
+This is a prototype of a UI library. It is specifically designed to
+target web browsers. It is written in Haskell. It is influenced by the
+Model-Update-View pattern from Elm, Virtual DOMs, and isomorphic
+frameworks. It is an alternative to javascript frameworks like
+react.js and angularjs.
 
 MURV
 ----
