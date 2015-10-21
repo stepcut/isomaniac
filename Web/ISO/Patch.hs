@@ -62,7 +62,7 @@ apply'' handle document node patch =
              putStrLn $ "set properties: " ++ show [ (k,v) | Attr k v <- newProps ]
              mapM_ (\(k, v) ->
                         case (unpack k) of
-                          "value" -> setValue e v
+--                          "value" -> setValue e v -- FIXME: this causes issues with the cursor position
                           _ -> setAttribute e k v) [ (k,v) | Attr k v <- newProps ]
       (Insert elem) ->
           -- FIXME: don't get parent?

@@ -426,6 +426,7 @@ addEventListener self type' listener useCapture
                           Input  -> JS.pack "input"
                           Blur   -> JS.pack "blur"
                           ReadyStateChange -> JS.pack "readystatechange"
+                          EventTxt s -> s
 
 
 -- * XMLHttpRequest
@@ -698,6 +699,7 @@ data EventType
     | Input
     | Blur
     | ReadyStateChange
+    | EventTxt JSString
 
 data Attr action
     = Attr Text Text
