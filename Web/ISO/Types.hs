@@ -11,9 +11,11 @@ import Data.JSString.Text (textToJSString, textFromJSString)
 import qualified Data.Text as Text
 -- import GHCJS.Prim (ToJSString(..), FromJSString(..))
 -- import JavaScript.TypedArray.ArrayBuffer (ArrayBuffer)
+import GHCJS.Buffer
 import GHCJS.Foreign (jsNull)
 import GHCJS.Foreign.Callback (Callback, asyncCallback)
 import GHCJS.Marshal (ToJSRef(..), FromJSRef(..))
+import GHCJS.Marshal.Pure (PToJSRef(pToJSRef))
 import GHCJS.Types (JSRef(..), JSString(..),  nullRef, isNull, isUndefined)
 
 instance Eq JSRef where
@@ -509,6 +511,14 @@ foreign import javascript unsafe "$1[\"send\"]($2)" js_sendString ::
 sendString :: (MonadIO m) => XMLHttpRequest -> JSString -> m ()
 sendString self str =
     liftIO $ js_sendString self str >> return () -- >>= throwXHRError
+
+foreign import javascript unsafe "$1[\"send\"]($2)" js_sendArrayBuffer ::
+        XMLHttpRequest -> JSRef -> IO ()
+
+sendArrayBuffer :: (MonadIO m) => XMLHttpRequest -> Buffer -> m ()
+sendArrayBuffer xhr buf =
+    liftIO $ do ref <- fmap (pToJSRef . getArrayBuffer) (thaw buf)
+                js_sendArrayBuffer xhr ref
 
 foreign import javascript unsafe "$1[\"send\"]($2)" js_sendData ::
         XMLHttpRequest
