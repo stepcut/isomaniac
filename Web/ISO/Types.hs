@@ -14,42 +14,42 @@ import qualified Data.Text as Text
 import GHCJS.Buffer
 import GHCJS.Foreign (jsNull)
 import GHCJS.Foreign.Callback (Callback, asyncCallback)
-import GHCJS.Marshal (ToJSRef(..), FromJSRef(..))
-import GHCJS.Marshal.Pure (PToJSRef(pToJSRef))
-import GHCJS.Types (JSRef(..), JSString(..),  nullRef, isNull, isUndefined)
+import GHCJS.Marshal (ToJSVal(..), FromJSVal(..))
+import GHCJS.Marshal.Pure (PToJSVal(pToJSVal))
+import GHCJS.Types (JSVal(..), JSString(..),  nullRef, isNull, isUndefined)
 
-instance Eq JSRef where
+instance Eq JSVal where
   a == b = js_eq a b
 
 foreign import javascript unsafe
-  "$1===$2" js_eq :: JSRef  -> JSRef  -> Bool
+  "$1===$2" js_eq :: JSVal  -> JSVal  -> Bool
 
 
-maybeJSNullOrUndefined :: JSRef -> Maybe JSRef
+maybeJSNullOrUndefined :: JSVal -> Maybe JSVal
 maybeJSNullOrUndefined r | isNull r || isUndefined r = Nothing
 maybeJSNullOrUndefined r = Just r
 
 {-
-fromJSRefUnchecked :: (FromJSRef a) => JSRef a -> IO a
-fromJSRefUnchecked j =
-    do x <- fromJSRef j
+fromJSValUnchecked :: (FromJSVal a) => JSVal a -> IO a
+fromJSValUnchecked j =
+    do x <- fromJSVal j
        case x of
          Nothing -> error "failed."
          (Just a) -> return a
 -}
 -- * JSNode
 
-newtype JSNode = JSNode JSRef
+newtype JSNode = JSNode JSVal
 
 unJSNode (JSNode o) = o
 
-instance ToJSRef JSNode where
-  toJSRef = toJSRef . unJSNode
-  {-# INLINE toJSRef #-}
+instance ToJSVal JSNode where
+  toJSVal = toJSVal . unJSNode
+  {-# INLINE toJSVal #-}
 
-instance FromJSRef JSNode where
-  fromJSRef = return . fmap JSNode . maybeJSNullOrUndefined
-  {-# INLINE fromJSRef #-}
+instance FromJSVal JSNode where
+  fromJSVal = return . fmap JSNode . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 -- * IsJSNode
 
@@ -61,17 +61,17 @@ instance IsJSNode JSNode where
 
 -- * JSNodeList
 
-newtype JSNodeList = JSNodeList JSRef
+newtype JSNodeList = JSNodeList JSVal
 
 unJSNodeList (JSNodeList o) = o
 
-instance ToJSRef JSNodeList where
-  toJSRef = return . unJSNodeList
-  {-# INLINE toJSRef #-}
+instance ToJSVal JSNodeList where
+  toJSVal = return . unJSNodeList
+  {-# INLINE toJSVal #-}
 
-instance FromJSRef JSNodeList where
-  fromJSRef = return . fmap JSNodeList . maybeJSNullOrUndefined
-  {-# INLINE fromJSRef #-}
+instance FromJSVal JSNodeList where
+  fromJSVal = return . fmap JSNodeList . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 instance IsJSNode JSNodeList where
     toJSNode = JSNode . unJSNodeList
@@ -92,34 +92,34 @@ foreign import javascript unsafe "$1[\"length\"]" js_length ::
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/NodeList.item Mozilla NodeList.item documentation>
 getLength :: (MonadIO m, IsJSNode self) => self -> m Word
 getLength self
-  = liftIO (js_length ( (toJSNode self))) -- >>= fromJSRefUnchecked)
+  = liftIO (js_length ( (toJSNode self))) -- >>= fromJSValUnchecked)
 
 -- foreign import javascript unsafe "$1[\"length\"]" js_getLength ::
---         JSRef NodeList -> IO Word
+--         JSVal NodeList -> IO Word
 
 
 -- * parentNode
 
 foreign import javascript unsafe "$1[\"parentNode\"]"
-        js_parentNode :: JSNode -> IO JSRef
+        js_parentNode :: JSNode -> IO JSVal
 
 parentNode :: (MonadIO m, IsJSNode self) => self -> m (Maybe JSNode)
 parentNode self =
-    liftIO (fromJSRef =<< js_parentNode (toJSNode self))
+    liftIO (fromJSVal =<< js_parentNode (toJSNode self))
 
 -- * JSDocument
 
-newtype JSDocument = JSDocument JSRef
+newtype JSDocument = JSDocument JSVal
 
 unJSDocument (JSDocument o) = o
 
-instance ToJSRef JSDocument where
-  toJSRef = return . unJSDocument
-  {-# INLINE toJSRef #-}
+instance ToJSVal JSDocument where
+  toJSVal = return . unJSDocument
+  {-# INLINE toJSVal #-}
 
-instance FromJSRef JSDocument where
-  fromJSRef = return . fmap JSDocument . maybeJSNullOrUndefined
-  {-# INLINE fromJSRef #-}
+instance FromJSVal JSDocument where
+  fromJSVal = return . fmap JSDocument . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 instance IsJSNode JSDocument where
     toJSNode = JSNode . unJSDocument
@@ -139,17 +139,17 @@ currentDocument = Just <$> ghcjs_currentDocument
 
 -- * JSElement
 
-newtype JSElement = JSElement JSRef
+newtype JSElement = JSElement JSVal
 
 unJSElement (JSElement o) = o
 
-instance ToJSRef JSElement where
-  toJSRef = return . unJSElement
-  {-# INLINE toJSRef #-}
+instance ToJSVal JSElement where
+  toJSVal = return . unJSElement
+  {-# INLINE toJSVal #-}
 
-instance FromJSRef JSElement where
-  fromJSRef = return . fmap JSElement . maybeJSNullOrUndefined
-  {-# INLINE fromJSRef #-}
+instance FromJSVal JSElement where
+  fromJSVal = return . fmap JSElement . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 instance IsJSNode JSElement where
     toJSNode = JSNode . unJSElement
@@ -241,7 +241,7 @@ probably broken on IE9
 -- * textContent
 
 foreign import javascript unsafe "$1[\"textContent\"] = $2"
-        js_setTextContent :: JSRef JSNode -> JSString -> IO ()
+        js_setTextContent :: JSVal JSNode -> JSString -> IO ()
 
 setTextContent :: (MonadIO m, IsJSNode self, ToJSString content) =>
                   self
@@ -303,12 +303,12 @@ replaceChild self newChild oldChild
 -- * firstChild
 
 foreign import javascript unsafe "$1[\"firstChild\"]"
-        js_getFirstChild :: JSNode -> IO JSRef
+        js_getFirstChild :: JSNode -> IO JSVal
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Node.firstChild Mozilla Node.firstChild documentation>
 getFirstChild :: (MonadIO m, IsJSNode self) => self -> m (Maybe JSNode)
 getFirstChild self
-  = liftIO ((js_getFirstChild ((toJSNode self))) >>= fromJSRef)
+  = liftIO ((js_getFirstChild ((toJSNode self))) >>= fromJSVal)
 
 removeChildren
     :: (MonadIO m, IsJSNode self) =>
@@ -351,17 +351,17 @@ setValue self str =
 
 -- * JSTextNode
 
-newtype JSTextNode = JSTextNode JSRef -- deriving (Eq)
+newtype JSTextNode = JSTextNode JSVal -- deriving (Eq)
 
 unJSTextNode (JSTextNode o) = o
 
-instance ToJSRef JSTextNode where
-  toJSRef = return . unJSTextNode
-  {-# INLINE toJSRef #-}
+instance ToJSVal JSTextNode where
+  toJSVal = return . unJSTextNode
+  {-# INLINE toJSVal #-}
 
-instance FromJSRef JSTextNode where
-  fromJSRef = return . fmap JSTextNode . maybeJSNullOrUndefined
-  {-# INLINE fromJSRef #-}
+instance FromJSVal JSTextNode where
+  fromJSVal = return . fmap JSTextNode . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 instance IsJSNode JSTextNode where
     toJSNode = JSNode . unJSTextNode
@@ -383,18 +383,18 @@ createJSTextNode document data'
 
 -- * Events
 
-newtype EventTarget = EventTarget { unEventTarget :: JSRef }
+newtype EventTarget = EventTarget { unEventTarget :: JSVal }
 
 instance Eq (EventTarget) where
   (EventTarget a) == (EventTarget b) = js_eq a b
 
-instance ToJSRef EventTarget where
-  toJSRef = return . unEventTarget
-  {-# INLINE toJSRef #-}
+instance ToJSVal EventTarget where
+  toJSVal = return . unEventTarget
+  {-# INLINE toJSVal #-}
 
-instance FromJSRef EventTarget where
-  fromJSRef = return . fmap EventTarget . maybeJSNullOrUndefined
-  {-# INLINE fromJSRef #-}
+instance FromJSVal EventTarget where
+  fromJSVal = return . fmap EventTarget . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 class IsEventTarget o where
     toEventTarget :: o -> EventTarget
@@ -417,7 +417,7 @@ addEventListener self type' listener useCapture
       (js_addEventListener (toEventTarget self)
          type''
          listener
---         (maybe jsNull pToJSRef listener)
+--         (maybe jsNull pToJSVal listener)
          useCapture)
              where
                type'' = case type' of
@@ -430,7 +430,7 @@ addEventListener self type' listener useCapture
 
 
 -- * XMLHttpRequest
-newtype XMLHttpRequest = XMLHttpRequest { unXMLHttpRequest :: JSRef }
+newtype XMLHttpRequest = XMLHttpRequest { unXMLHttpRequest :: JSVal }
 
 instance Eq (XMLHttpRequest) where
   (XMLHttpRequest a) == (XMLHttpRequest b) = js_eq a b
@@ -439,21 +439,21 @@ instance IsEventTarget XMLHttpRequest where
     toEventTarget = EventTarget . unXMLHttpRequest
 
 {-
-instance PToJSRef XMLHttpRequest where
-  pToJSRef = unXMLHttpRequest
-  {-# INLINE pToJSRef #-}
+instance PToJSVal XMLHttpRequest where
+  pToJSVal = unXMLHttpRequest
+  {-# INLINE pToJSVal #-}
 
-instance PFromJSRef XMLHttpRequest where
-  pFromJSRef = XMLHttpRequest
-  {-# INLINE pFromJSRef #-}
+instance PFromJSVal XMLHttpRequest where
+  pFromJSVal = XMLHttpRequest
+  {-# INLINE pFromJSVal #-}
 -}
-instance ToJSRef XMLHttpRequest where
-  toJSRef = return . unXMLHttpRequest
-  {-# INLINE toJSRef #-}
+instance ToJSVal XMLHttpRequest where
+  toJSVal = return . unXMLHttpRequest
+  {-# INLINE toJSVal #-}
 
-instance FromJSRef XMLHttpRequest where
-  fromJSRef = return . fmap XMLHttpRequest . maybeJSNullOrUndefined
-  {-# INLINE fromJSRef #-}
+instance FromJSVal XMLHttpRequest where
+  fromJSVal = return . fmap XMLHttpRequest . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 foreign import javascript unsafe "new window[\"XMLHttpRequest\"]()"
         js_newXMLHttpRequest :: IO XMLHttpRequest
@@ -490,7 +490,7 @@ setRequestHeader :: (MonadIO m) =>
 setRequestHeader self header value =
     liftIO (js_setRequestHeader self (textToJSString header) (textToJSString value))
 
--- foreign import javascript interruptible "h$dom$sendXHR($1, $2, $c);" js_send :: JSRef XMLHttpRequest -> JSRef () -> IO Int
+-- foreign import javascript interruptible "h$dom$sendXHR($1, $2, $c);" js_send :: JSVal XMLHttpRequest -> JSVal () -> IO Int
 {-
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest#send() Mozilla XMLHttpRequest.send documentation>
 send :: (MonadIO m) => XMLHttpRequest -> m ()
@@ -514,16 +514,16 @@ sendString self str =
     liftIO $ js_sendString self str >> return () -- >>= throwXHRError
 
 foreign import javascript unsafe "$1[\"send\"]($2)" js_sendArrayBuffer ::
-        XMLHttpRequest -> JSRef -> IO ()
+        XMLHttpRequest -> JSVal -> IO ()
 
 sendArrayBuffer :: (MonadIO m) => XMLHttpRequest -> Buffer -> m ()
 sendArrayBuffer xhr buf =
-    liftIO $ do ref <- fmap (pToJSRef . getArrayBuffer) (thaw buf)
+    liftIO $ do ref <- fmap (pToJSVal . getArrayBuffer) (thaw buf)
                 js_sendArrayBuffer xhr ref
 
 foreign import javascript unsafe "$1[\"send\"]($2)" js_sendData ::
         XMLHttpRequest
-    -> JSRef
+    -> JSVal
     -> IO ()
 
 foreign import javascript unsafe "$1[\"readyState\"]"
@@ -563,79 +563,79 @@ data XMLHttpRequestResponseType = XMLHttpRequestResponseType
                                 | XMLHttpRequestResponseTypeJson
                                 | XMLHttpRequestResponseTypeText
 foreign import javascript unsafe "\"\""
-        js_XMLHttpRequestResponseType :: JSRef -- XMLHttpRequestResponseType
+        js_XMLHttpRequestResponseType :: JSVal -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"arraybuffer\""
         js_XMLHttpRequestResponseTypeArraybuffer ::
-        JSRef -- XMLHttpRequestResponseType
+        JSVal -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"blob\""
         js_XMLHttpRequestResponseTypeBlob ::
-        JSRef -- XMLHttpRequestResponseType
+        JSVal -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"document\""
         js_XMLHttpRequestResponseTypeDocument ::
-        JSRef -- XMLHttpRequestResponseType
+        JSVal -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"json\""
         js_XMLHttpRequestResponseTypeJson ::
-        JSRef -- XMLHttpRequestResponseType
+        JSVal -- XMLHttpRequestResponseType
 
 foreign import javascript unsafe "\"text\""
         js_XMLHttpRequestResponseTypeText ::
-        JSRef -- XMLHttpRequestResponseType
+        JSVal -- XMLHttpRequestResponseType
 
 {-
-instance PToJSRef XMLHttpRequestResponseType where
-        pToJSRef XMLHttpRequestResponseType = js_XMLHttpRequestResponseType
-        pToJSRef XMLHttpRequestResponseTypeArraybuffer
+instance PToJSVal XMLHttpRequestResponseType where
+        pToJSVal XMLHttpRequestResponseType = js_XMLHttpRequestResponseType
+        pToJSVal XMLHttpRequestResponseTypeArraybuffer
           = js_XMLHttpRequestResponseTypeArraybuffer
-        pToJSRef XMLHttpRequestResponseTypeBlob
+        pToJSVal XMLHttpRequestResponseTypeBlob
           = js_XMLHttpRequestResponseTypeBlob
-        pToJSRef XMLHttpRequestResponseTypeDocument
+        pToJSVal XMLHttpRequestResponseTypeDocument
           = js_XMLHttpRequestResponseTypeDocument
-        pToJSRef XMLHttpRequestResponseTypeJson
+        pToJSVal XMLHttpRequestResponseTypeJson
           = js_XMLHttpRequestResponseTypeJson
-        pToJSRef XMLHttpRequestResponseTypeText
+        pToJSVal XMLHttpRequestResponseTypeText
           = js_XMLHttpRequestResponseTypeText
 -}
-instance ToJSRef XMLHttpRequestResponseType where
-        toJSRef XMLHttpRequestResponseType
+instance ToJSVal XMLHttpRequestResponseType where
+        toJSVal XMLHttpRequestResponseType
           = return js_XMLHttpRequestResponseType
-        toJSRef XMLHttpRequestResponseTypeArraybuffer
+        toJSVal XMLHttpRequestResponseTypeArraybuffer
           = return js_XMLHttpRequestResponseTypeArraybuffer
-        toJSRef XMLHttpRequestResponseTypeBlob
+        toJSVal XMLHttpRequestResponseTypeBlob
           = return js_XMLHttpRequestResponseTypeBlob
-        toJSRef XMLHttpRequestResponseTypeDocument
+        toJSVal XMLHttpRequestResponseTypeDocument
           = return js_XMLHttpRequestResponseTypeDocument
-        toJSRef XMLHttpRequestResponseTypeJson
+        toJSVal XMLHttpRequestResponseTypeJson
           = return js_XMLHttpRequestResponseTypeJson
-        toJSRef XMLHttpRequestResponseTypeText
+        toJSVal XMLHttpRequestResponseTypeText
           = return js_XMLHttpRequestResponseTypeText
 
 {-
-instance PFromJSRef XMLHttpRequestResponseType where
-        pFromJSRef x
+instance PFromJSVal XMLHttpRequestResponseType where
+        pFromJSVal x
           | x == js_XMLHttpRequestResponseType = XMLHttpRequestResponseType
-        pFromJSRef x
+        pFromJSVal x
           | x == js_XMLHttpRequestResponseTypeArraybuffer =
             XMLHttpRequestResponseTypeArraybuffer
-        pFromJSRef x
+        pFromJSVal x
           | x == js_XMLHttpRequestResponseTypeBlob =
             XMLHttpRequestResponseTypeBlob
-        pFromJSRef x
+        pFromJSVal x
           | x == js_XMLHttpRequestResponseTypeDocument =
             XMLHttpRequestResponseTypeDocument
-        pFromJSRef x
+        pFromJSVal x
           | x == js_XMLHttpRequestResponseTypeJson =
             XMLHttpRequestResponseTypeJson
-        pFromJSRef x
+        pFromJSVal x
           | x == js_XMLHttpRequestResponseTypeText =
             XMLHttpRequestResponseTypeText
 -}
-instance FromJSRef XMLHttpRequestResponseType where
---        fromJSRefUnchecked = return . pFromJSRef
-        fromJSRef x
+instance FromJSVal XMLHttpRequestResponseType where
+--        fromJSValUnchecked = return . pFromJSVal
+        fromJSVal x
             | x == js_XMLHttpRequestResponseType =
                 return (Just XMLHttpRequestResponseType)
             | x == js_XMLHttpRequestResponseTypeArraybuffer =
@@ -651,12 +651,12 @@ instance FromJSRef XMLHttpRequestResponseType where
 
 foreign import javascript unsafe "$1[\"response\"]" js_getResponse
         :: XMLHttpRequest
-        -> IO JSRef
+        -> IO JSVal
 
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.response Mozilla XMLHttpRequest.response documentation>
 getResponse :: (MonadIO m) =>
                XMLHttpRequest
-            -> m JSRef
+            -> m JSVal
 getResponse self =
     liftIO (js_getResponse self)
 
