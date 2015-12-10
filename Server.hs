@@ -14,5 +14,5 @@ handler = msum
         rq <- askRq
         (Just (Body s)) <- takeRequestBody rq
         ok $ toResponseBS (B.pack "text/plain") s
-    , serveDirectory EnableBrowsing [] "Main.jsexe"
+    , serveDirectory EnableBrowsing [] "CanvasDemo.jsexe"
     ]

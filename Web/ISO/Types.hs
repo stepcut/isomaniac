@@ -1,7 +1,9 @@
-{-# LANGUAGE JavaScriptFFI, ExistentialQuantification, ScopedTypeVariables  #-}
+{-# LANGUAGE JavaScriptFFI, ExistentialQuantification, ScopedTypeVariables, TemplateHaskell  #-}
 module Web.ISO.Types where
 
 import Control.Monad.Trans (MonadIO(..))
+import Control.Lens ((^.))
+import Control.Lens.TH (makeLenses)
 import Data.Maybe (fromJust)
 import Data.Aeson.Types (Parser, Result(..), parse)
 import Data.Monoid ((<>))
@@ -333,6 +335,17 @@ setAttribute self name value
   = liftIO
       (js_setAttribute self (textToJSString name) (textToJSString value))
 
+foreign import javascript unsafe "$1[\"style\"][\"$2\"] = $3"
+        setStyle :: JSElement -> JSString -> JSString -> IO ()
+{-
+setCSS :: (MonadIO m) =>
+          JSElement
+       -> JSString
+       -> JSString
+       -> m ()
+setCSS elem name value =
+  liftIO $ js_setCSS elem name value
+-}
 -- * value
 
 foreign import javascript unsafe "$1[\"value\"]"
@@ -663,7 +676,7 @@ getResponse self =
 foreign import javascript unsafe "$1[\"responseText\"]"
         js_getResponseText :: XMLHttpRequest -> IO JSString
 
--- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.responseText Mozilla XMLHttpRequest.responseText documentation> 
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest.responseText Mozilla XMLHttpRequest.responseText documentation>
 getResponseText ::
                 (MonadIO m) => XMLHttpRequest -> m Text
 getResponseText self
@@ -842,3 +855,260 @@ murv url h m =
        mainLoopRemote url h document murv m
 -}
 
+-- * Canvas
+
+newtype JSContext2D = JSContext2D { unJSContext :: JSVal }
+
+instance ToJSVal JSContext2D where
+  toJSVal = return . unJSContext
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal JSContext2D where
+  fromJSVal = return . fmap JSContext2D . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+foreign import javascript unsafe "$1[\"getContext\"](\"2d\")"
+        js_getContext2d ::
+        JSElement -> IO JSVal
+
+getContext2D :: (MonadIO m) => JSElement -> m (Maybe JSContext2D)
+getContext2D elem = liftIO $ fromJSVal =<< js_getContext2d elem
+
+foreign import javascript unsafe "$1[\"fillRect\"]($2, $3, $4, $5)"
+        js_fillRect ::
+        JSContext2D -> Double -> Double -> Double -> Double -> IO ()
+
+fillRect :: JSContext2D -> Double -> Double -> Double -> Double -> IO ()
+fillRect = js_fillRect
+
+renderColor :: Color -> JSString
+renderColor (ColorName c) = c
+
+renderStyle :: Style -> JSString
+renderStyle (StyleColor color) = renderColor color
+
+foreign import javascript unsafe "$1[\"fillStyle\"] = $2"
+        js_fillStyle ::
+        JSContext2D -> JSString -> IO ()
+
+setFillStyle :: JSContext2D -> Style -> IO ()
+setFillStyle ctx style = js_fillStyle ctx (renderStyle style)
+
+foreign import javascript unsafe "$1[\"strokeStyle\"] = $2"
+        js_strokeStyle ::
+        JSContext2D -> JSString -> IO ()
+
+setStrokeStyle :: JSContext2D -> Style -> IO ()
+setStrokeStyle ctx style = js_strokeStyle ctx (renderStyle style)
+
+foreign import javascript unsafe "$1[\"save\"]()"
+        js_save ::
+        JSContext2D -> IO ()
+
+save :: (MonadIO m) => JSContext2D -> m ()
+save = liftIO . js_save
+
+foreign import javascript unsafe "$1[\"restore\"]()"
+        js_restore ::
+        JSContext2D -> IO ()
+
+restore :: (MonadIO m) => JSContext2D -> m ()
+restore = liftIO . js_restore
+
+foreign import javascript unsafe "$1[\"moveTo\"]($2, $3)"
+        js_moveTo ::
+        JSContext2D -> Double -> Double -> IO ()
+
+moveTo :: (MonadIO m) => JSContext2D -> Double -> Double -> m ()
+moveTo ctx x y = liftIO $ js_moveTo ctx x y
+
+foreign import javascript unsafe "$1[\"lineTo\"]($2, $3)"
+        js_lineTo ::
+        JSContext2D -> Double -> Double -> IO ()
+
+lineTo :: (MonadIO m) => JSContext2D -> Double -> Double -> m ()
+lineTo ctx x y = liftIO $ js_lineTo ctx x y
+
+
+foreign import javascript unsafe "$1[\"arc\"]($2, $3, $4, $5, $6, $7)"
+        js_arc ::
+        JSContext2D -> Double -> Double -> Double -> Double -> Double -> Bool -> IO ()
+
+arc :: (MonadIO m) => JSContext2D -> Double -> Double -> Double -> Double -> Double -> Bool -> m ()
+arc ctx x y radius startAngle endAngle counterClockwise = liftIO $ js_arc ctx x y radius startAngle endAngle counterClockwise
+
+foreign import javascript unsafe "$1[\"beginPath\"]()"
+        js_beginPath ::
+        JSContext2D -> IO ()
+
+beginPath :: (MonadIO m) => JSContext2D -> m ()
+beginPath = liftIO . js_beginPath
+
+foreign import javascript unsafe "$1[\"stroke\"]()"
+        js_stroke ::
+        JSContext2D -> IO ()
+
+stroke :: (MonadIO m) => JSContext2D -> m ()
+stroke = liftIO . js_stroke
+
+foreign import javascript unsafe "$1[\"fill\"]()"
+        js_fill ::
+        JSContext2D -> IO ()
+
+fill :: (MonadIO m) => JSContext2D -> m ()
+fill = liftIO . js_fill
+
+-- * Font/Text
+
+foreign import javascript unsafe "$1[\"font\"] = $2"
+        js_font ::
+        JSContext2D -> JSString -> IO ()
+
+setFont :: (MonadIO m) => JSContext2D -> JSString -> m ()
+setFont ctx font = liftIO $ js_font ctx font
+
+foreign import javascript unsafe "$1[\"textAlign\"] = $2"
+        js_textAlign ::
+        JSContext2D -> JSString -> IO ()
+
+setTextAlign :: (MonadIO m) => JSContext2D -> JSString -> m ()
+setTextAlign ctx align = liftIO $ js_textAlign ctx align
+
+foreign import javascript unsafe "$1[\"fillText\"]($2, $3, $4)"
+  js_fillText :: JSContext2D -> JSString -> Double -> Double -> IO ()
+
+foreign import javascript unsafe "$1[\"fillText\"]($2, $3, $4, $5)"
+        js_fillTextMaxWidth ::
+        JSContext2D -> JSString -> Double -> Double -> Double -> IO ()
+
+fillText :: (MonadIO m) =>
+            JSContext2D
+         -> JSString
+         -> Double
+         -> Double
+         -> Maybe Double
+         -> m ()
+fillText ctx txt x y Nothing = liftIO $ js_fillText ctx txt x y
+fillText ctx txt x y (Just maxWidth) = liftIO $ js_fillTextMaxWidth ctx txt x y maxWidth
+
+foreign import javascript unsafe "$1[\"scale\"]($2, $3)"
+  js_scale :: JSContext2D -> Int -> Int -> IO ()
+
+scale :: (MonadIO m) => JSContext2D -> Int -> Int -> m ()
+scale ctx x y = liftIO $ js_scale ctx x y
+
+data Gradient = Gradient
+data Pattern = Pattern
+
+type Percentage = Double
+type Alpha = Double
+
+data Color
+  = ColorName JSString
+  | RGBA Percentage Percentage Percentage Alpha
+
+data Style
+  = StyleColor Color
+  | StyleGradient Gradient
+  | StylePattern Pattern
+
+data Rect
+  = Rect { _rectX      :: Double
+         , _rectY      :: Double
+         , _rectWidth  :: Double
+         , _rectHeight :: Double
+         }
+
+-- https://developer.mozilla.org/en-US/docs/Web/API/Path2D
+data Path2D
+  = MoveTo Double Double
+  | LineTo Double Double
+  | PathRect Rect
+  | Arc Double Double Double Double Double Bool
+
+data Draw
+  = FillRect Rect
+  | Stroke [Path2D]
+  | Fill [Path2D]
+  | FillText JSString Double Double (Maybe Double)
+
+-- | this is not sustainable. A Set of attributes is probably a better choice
+data Context2D = Context2D
+ { _fillStyle   :: Style
+ , _strokeStyle :: Style
+ , _lineWidth   :: Double
+ , _font        :: JSString
+ , _textAlign   :: JSString
+ }
+
+makeLenses ''Context2D
+
+context2D :: Context2D
+context2D = Context2D
+  { _fillStyle   = StyleColor (ColorName $ JS.pack "black") -- technically should be #000
+  , _strokeStyle = StyleColor (ColorName $ JS.pack "black") -- technically should be #000
+  , _lineWidth   = 1.0
+  , _font        = JS.pack "10px sans-serif"
+  , _textAlign   = JS.pack "left"
+  }
+
+data Canvas = Canvas
+  { _canvasId :: Text
+  , _canvas :: Canvas2D
+  }
+
+data Canvas2D
+  = WithContext2D Context2D [ Canvas2D ]
+  | Draw Draw
+
+
+mkPath :: (MonadIO m) => JSContext2D -> [Path2D] -> m ()
+mkPath ctx segments =
+  do beginPath ctx
+     mapM_ (mkSegment ctx) segments
+  where
+    mkSegment ctx segment =
+      case segment of
+       (MoveTo x y) -> moveTo ctx x y
+       (LineTo x y) -> lineTo ctx x y
+       (Arc x y radius startAngle endAngle counterClockwise) -> arc ctx x y radius startAngle endAngle counterClockwise
+--        (Rect (Rect x y w h)) -> rect x y w h
+
+
+-- https://gist.github.com/joubertnel/870190
+drawCanvas :: Canvas -> IO ()
+drawCanvas (Canvas cid content) =
+  do (Just document) <- currentDocument
+     mCanvasElem <- getElementById document (textToJSString cid)
+     case mCanvasElem of
+      Nothing       -> pure ()
+      (Just canvasElem) ->
+        do js_setAttribute canvasElem (JS.pack "width")  (JS.pack "1920")
+           js_setAttribute canvasElem (JS.pack "height") (JS.pack "960")
+           setStyle canvasElem (JS.pack "width")  (JS.pack "960px")
+           setStyle canvasElem (JS.pack "height")  (JS.pack "480px")
+           mctx <- getContext2D canvasElem
+           case mctx of
+            Nothing -> pure ()
+            (Just ctx) -> do
+              scale ctx 2 2
+              drawCanvas' ctx context2D content
+  where
+    drawCanvas' ctx ctx2d (Draw (FillRect (Rect x y w h))) =
+      fillRect ctx x y w h
+    drawCanvas' ctx ctx2d (Draw (Stroke path2D)) =
+      do mkPath ctx path2D
+         stroke ctx
+    drawCanvas' ctx ctx2d (Draw (Fill path2D)) =
+      do mkPath ctx path2D
+         fill ctx
+    drawCanvas' ctx ctx2d (Draw (FillText text x y maxWidth)) =
+      do fillText ctx text x y maxWidth
+    drawCanvas' ctx oldCtx2d (WithContext2D ctx2d content) =
+     do save ctx
+        setFillStyle ctx (ctx2d ^. fillStyle)
+        setStrokeStyle ctx (ctx2d ^. strokeStyle)
+        setFont ctx (ctx2d ^. font)
+        setTextAlign ctx (ctx2d ^. textAlign)
+        mapM_ (drawCanvas' ctx ctx2d) content -- NOTE: how to do we deal with things that children have messed with in the ctx? save()/restore()?
+        restore ctx

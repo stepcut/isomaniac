@@ -79,16 +79,20 @@ muv m =
 data MURV  model action remote = MURV
     { model  :: model
     , update :: action -> model -> (model, Maybe remote)
-    , view   :: model  -> HTML action
+    , view   :: model  -> (HTML action, Canvas)
     }
 
 mainLoopRemote :: (Show action) => Text -> (Text -> action) -> JSDocument -> JSNode -> MURV model action Text -> Maybe action -> IO ()
 mainLoopRemote url h document body (MURV model update view) mInitAction =
     do queue <- atomically newTQueue
-       let vdom = view model
+       let (vdom, canvas) = view model
+       -- update HTML
        html <- renderHTML (handleAction queue) document vdom
        removeChildren body
        appendChild body html
+       -- update Canvases
+       drawCanvas canvas
+       -- xhr request
        xhr <- newXMLHttpRequest
        cb <- asyncCallback (handleXHR queue xhr)
        addEventListener xhr ReadyStateChange cb False
@@ -108,11 +112,14 @@ mainLoopRemote url h document body (MURV model update view) mInitAction =
       loop xhr queue model oldVDom =
           do action <- atomically $ readTQueue queue
              let (model', mremote') = update action model
-             let vdom = view model'
+             let (vdom, canvas) = view model'
                  diffs = diff oldVDom vdom
              putStrLn $ "action --> " ++ show action
              putStrLn $ "diff --> " ++ show diffs
+             -- update HTML
              apply (handleAction queue) document body oldVDom diffs
+             -- update Canvases
+             drawCanvas canvas
 --             html <- renderHTML (handleAction queue) document vdom
 --             removeChildren body
 --             appendJSChild body html
