@@ -103,7 +103,7 @@ scatterPlot width' height' xScale xLabels yScale yLabels points =
       ]
 
 {- View -}
-view' :: Model -> (HTML Action, Canvas)
+view' :: Model -> (HTML Action, [Canvas])
 view' (Model c txt) =
   let plus x y = Draw (Stroke [ MoveTo   (x - 10) y
                               , LineTo   (x + 10) y
@@ -117,18 +117,6 @@ view' (Model c txt) =
               ]
       points = [ (x*100, y*100) | x <- take 100 (randoms (mkStdGen c)) | y <- take 100 (randoms (mkStdGen (c + 1)))]
       canvas = scatterPlot (960) (480) Linear [ (x, JSString.pack (show x)) | x <- [0, 20, 40, 60, 70, 80, 100]] Linear [ (y, JSString.pack (show y)) | y <- [0, 20, 40, 60, 70, 80, 100]] points
-      
-{-
-v        (WithContext2D (set fillStyle (StyleColor (ColorName "green")) context2D)
-           [ Draw (FillRect (Rect 0 0 10 10))
-           , WithContext2D (set strokeStyle (StyleColor (ColorName "blue")) context2D)
-              [ plus 10 10
-              , plus 30 30
-              , plus 50 50
-              ]
-          , Draw (FillRect (Rect 10 10 5 10))
-          ])
--}
   in
    ([hsx| <div>
            <h1>Scatter Plot</h1>
@@ -142,8 +130,10 @@ v        (WithContext2D (set fillStyle (StyleColor (ColorName "green")) context2
             <p><% txt %></p>
            </div>
 
+           <canvas id="canvas2" width="960" height="480" style="width:960px; height:480px"></canvas>
+
          </div>
-        |], Canvas "canvas" canvas)
+        |], [Canvas "canvas" canvas, Canvas "canvas2" canvas])
 
 
 counter :: MURV Model Action Text
@@ -157,3 +147,16 @@ counter = MURV
 
 main :: IO ()
 main = murv "http://localhost:8000/api" Msg counter Nothing
+
+      
+{-
+v        (WithContext2D (set fillStyle (StyleColor (ColorName "green")) context2D)
+           [ Draw (FillRect (Rect 0 0 10 10))
+           , WithContext2D (set strokeStyle (StyleColor (ColorName "blue")) context2D)
+              [ plus 10 10
+              , plus 30 30
+              , plus 50 50
+              ]
+          , Draw (FillRect (Rect 10 10 5 10))
+          ])
+-}

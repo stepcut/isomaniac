@@ -1095,7 +1095,7 @@ drawCanvas (Canvas cid content) =
      case mCanvasElem of
       Nothing       -> pure ()
       (Just canvasElem) ->
-        do js_setAttribute canvasElem (JS.pack "width")  (JS.pack "1920")
+        do js_setAttribute canvasElem (JS.pack "width")  (JS.pack "1920") -- FIXME: needs to use actual canvas tag stuff
            js_setAttribute canvasElem (JS.pack "height") (JS.pack "960")
            setStyle canvasElem (JS.pack "width")  (JS.pack "960px")
            setStyle canvasElem (JS.pack "height")  (JS.pack "480px")
