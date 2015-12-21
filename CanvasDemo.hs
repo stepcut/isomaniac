@@ -116,24 +116,23 @@ view' (Model c txt) =
               , plus 50 50
               ]
       points = [ (x*100, y*100) | x <- take 100 (randoms (mkStdGen c)) | y <- take 100 (randoms (mkStdGen (c + 1)))]
-      canvas = scatterPlot (960) (480) Linear [ (x, JSString.pack (show x)) | x <- [0, 20, 40, 60, 70, 80, 100]] Linear [ (y, JSString.pack (show y)) | y <- [0, 20, 40, 60, 70, 80, 100]] points
+      canvas w h = scatterPlot w h Linear [ (x, JSString.pack (show x)) | x <- [0, 20, 40, 60, 70, 80, 100]] Linear [ (y, JSString.pack (show y)) | y <- [0, 20, 40, 60, 70, 80, 100]] points
   in
    ([hsx| <div>
            <h1>Scatter Plot</h1>
-           <canvas id="canvas" width="960" height="480" style="width:960px; height:480px"></canvas>
+           <canvas id="canvas" width="960" height="480"></canvas>
 
            <div>
             <p>The count is <% show c %></p>
             <button onclick=Decrement>-</button>
             <button onclick=Increment>+</button>
-            <input type="text" oninput=Set value=(pack $ show c) />
-            <p><% txt %></p>
+            <p><input type="text" oninput=Set value=(pack $ show c) /><% txt %></p>
            </div>
 
-           <canvas id="canvas2" width="960" height="480" style="width:960px; height:480px"></canvas>
+           <canvas id="canvas2" width="480" height="240"></canvas>
 
          </div>
-        |], [Canvas "canvas" canvas, Canvas "canvas2" canvas])
+        |], [Canvas "canvas" (canvas 960 480), Canvas "canvas2" (canvas 480 240)])
 
 
 counter :: MURV Model Action Text

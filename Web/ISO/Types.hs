@@ -1,11 +1,13 @@
 {-# LANGUAGE JavaScriptFFI, ExistentialQuantification, ScopedTypeVariables, TemplateHaskell  #-}
 module Web.ISO.Types where
 
-import Control.Monad.Trans (MonadIO(..))
 import Control.Lens ((^.))
 import Control.Lens.TH (makeLenses)
+import Control.Monad (when)
+import Control.Monad.Trans (MonadIO(..))
 import Data.Maybe (fromJust)
 import Data.Aeson.Types (Parser, Result(..), parse)
+import Data.Maybe (fromMaybe)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import qualified Data.JSString as JS
@@ -18,6 +20,7 @@ import GHCJS.Foreign (jsNull)
 import GHCJS.Foreign.Callback (Callback, asyncCallback)
 import GHCJS.Marshal (ToJSVal(..), FromJSVal(..))
 import GHCJS.Marshal.Pure (PToJSVal(pToJSVal))
+import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
 import GHCJS.Types (JSVal(..), JSString(..),  nullRef, isNull, isUndefined)
 
 instance Eq JSVal where
@@ -138,6 +141,30 @@ foreign import javascript unsafe "$r = document"
 
 currentDocument :: IO (Maybe JSDocument)
 currentDocument = Just <$> ghcjs_currentDocument
+
+-- * JSWindow
+
+newtype JSWindow = JSWindow { unJSWindow ::  JSVal }
+
+instance ToJSVal JSWindow where
+  toJSVal = return . unJSWindow
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal JSWindow where
+  fromJSVal = return . fmap JSWindow . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+foreign import javascript unsafe "$r = window"
+  js_window :: IO JSWindow
+
+window :: (MonadIO m) => m JSWindow
+window = liftIO js_window
+
+foreign import javascript unsafe "$1[\"devicePixelRatio\"]"
+  js_devicePixelRatio :: JSWindow -> IO JSVal
+
+devicePixelRatio :: (MonadIO m) => JSWindow -> m (Maybe Double)
+devicePixelRatio w = liftIO (fromJSVal =<< js_devicePixelRatio w)
 
 -- * JSElement
 
@@ -335,8 +362,20 @@ setAttribute self name value
   = liftIO
       (js_setAttribute self (textToJSString name) (textToJSString value))
 
-foreign import javascript unsafe "$1[\"style\"][\"$2\"] = $3"
+
+foreign import javascript unsafe "$1[\"getAttribute\"]($2)"
+        js_getAttribute :: JSElement -> JSString -> IO JSVal
+
+-- | <https://developer.mozilla.org/en-US/docs/Web/API/Element.setAttribute Mozilla Element.setAttribute documentation>
+getAttribute :: (MonadIO m) =>
+                JSElement
+             -> JSString
+             -> m (Maybe JSString)
+getAttribute self name = liftIO (js_getAttribute self name >>= fromJSVal)
+
+foreign import javascript unsafe "$1[\"style\"][$2] = $3"
         setStyle :: JSElement -> JSString -> JSString -> IO ()
+
 {-
 setCSS :: (MonadIO m) =>
           JSElement
@@ -361,6 +400,21 @@ foreign import javascript unsafe "$1[\"value\"] = $2"
 setValue :: (MonadIO m, IsJSNode self) => self -> Text -> m ()
 setValue self str =
     liftIO (js_setValue (toJSNode self) (textToJSString str))
+
+-- * dataset
+
+foreign import javascript unsafe "$1[\"dataset\"][$2]"
+        js_getData :: JSNode -> JSString -> IO (Nullable JSString)
+
+getData :: (MonadIO m, IsJSNode self) => self -> JSString -> m (Maybe JSString)
+getData self name = liftIO (nullableToMaybe <$> js_getData (toJSNode self) name)
+--getData self name = liftIO (fmap fromJSVal <$> maybeJSNullOrUndefined <$> (js_getData (toJSNode self) name))
+
+foreign import javascript unsafe "$1[\"dataset\"][$2] = $3"
+        js_setData :: JSNode -> JSString -> JSString -> IO ()
+
+setData :: (MonadIO m, IsJSNode self) => self -> JSString -> JSString -> m ()
+setData self name value = liftIO (js_setData (toJSNode self) name value)
 
 -- * JSTextNode
 
@@ -893,6 +947,14 @@ foreign import javascript unsafe "$1[\"fillRect\"]($2, $3, $4, $5)"
 fillRect :: JSContext2D -> Double -> Double -> Double -> Double -> IO ()
 fillRect = js_fillRect
 
+
+foreign import javascript unsafe "$1[\"clearRect\"]($2, $3, $4, $5)"
+        js_clearRect ::
+        JSContext2D -> Double -> Double -> Double -> Double -> IO ()
+
+clearRect :: JSContext2D -> Double -> Double -> Double -> Double -> IO ()
+clearRect = js_clearRect
+
 renderColor :: Color -> JSString
 renderColor (ColorName c) = c
 
@@ -1004,9 +1066,9 @@ fillText ctx txt x y Nothing = liftIO $ js_fillText ctx txt x y
 fillText ctx txt x y (Just maxWidth) = liftIO $ js_fillTextMaxWidth ctx txt x y maxWidth
 
 foreign import javascript unsafe "$1[\"scale\"]($2, $3)"
-  js_scale :: JSContext2D -> Int -> Int -> IO ()
+  js_scale :: JSContext2D -> Double -> Double -> IO ()
 
-scale :: (MonadIO m) => JSContext2D -> Int -> Int -> m ()
+scale :: (MonadIO m) => JSContext2D -> Double -> Double -> m ()
 scale ctx x y = liftIO $ js_scale ctx x y
 
 data Gradient = Gradient
@@ -1040,6 +1102,7 @@ data Path2D
 
 data Draw
   = FillRect Rect
+  | ClearRect Rect
   | Stroke [Path2D]
   | Fill [Path2D]
   | FillText JSString Double Double (Maybe Double)
@@ -1095,19 +1158,41 @@ drawCanvas (Canvas cid content) =
      case mCanvasElem of
       Nothing       -> pure ()
       (Just canvasElem) ->
-        do js_setAttribute canvasElem (JS.pack "width")  (JS.pack "1920") -- FIXME: needs to use actual canvas tag stuff
-           js_setAttribute canvasElem (JS.pack "height") (JS.pack "960")
-           setStyle canvasElem (JS.pack "width")  (JS.pack "960px")
-           setStyle canvasElem (JS.pack "height")  (JS.pack "480px")
+           -- http://www.html5rocks.com/en/tutorials/canvas/hidpi/
+           -- NOTE: backingStorePixelRatio is deprecated, we just ignore it
+        do rescaleCanvas <- do ms <- getData canvasElem (JS.pack "rescale")
+                               case ms of
+                                Nothing -> pure True
+                                (Just s) ->
+                                  case (JS.unpack s) of
+                                    "true" -> pure True
+                                    _ -> pure False
+           ratio <- fmap (fromMaybe 1) (devicePixelRatio =<< window)
+           (w, h) <-
+              if rescaleCanvas
+                 then do (Just oldWidth)  <- fmap (read . JS.unpack) <$> getAttribute canvasElem (JS.pack "width")
+                         (Just oldHeight) <- fmap (read . JS.unpack) <$> getAttribute canvasElem (JS.pack "height")
+                         js_setAttribute canvasElem (JS.pack "width")  (JS.pack $ show $ oldWidth * ratio)
+                         js_setAttribute canvasElem (JS.pack "height") (JS.pack $ show $ oldHeight * ratio)
+                         setStyle canvasElem (JS.pack "width")  (JS.pack  $ (show oldWidth) ++ "px")
+                         setStyle canvasElem (JS.pack "height")  (JS.pack $ (show oldHeight) ++ "px")
+                         setData canvasElem (JS.pack "rescale") (JS.pack "false")
+                         pure (oldWidth * ratio, oldHeight * ratio)
+                 else do (Just width)  <- fmap (read . JS.unpack) <$> getAttribute canvasElem (JS.pack "width")
+                         (Just height) <- fmap (read . JS.unpack) <$> getAttribute canvasElem (JS.pack "height")
+                         pure (width, height)
            mctx <- getContext2D canvasElem
            case mctx of
             Nothing -> pure ()
             (Just ctx) -> do
-              scale ctx 2 2
+              when (rescaleCanvas) (scale ctx ratio ratio)
+              clearRect ctx 0 0 w h
               drawCanvas' ctx context2D content
   where
     drawCanvas' ctx ctx2d (Draw (FillRect (Rect x y w h))) =
       fillRect ctx x y w h
+    drawCanvas' ctx ctx2d (Draw (ClearRect (Rect x y w h))) =
+      clearRect ctx x y w h
     drawCanvas' ctx ctx2d (Draw (Stroke path2D)) =
       do mkPath ctx path2D
          stroke ctx
