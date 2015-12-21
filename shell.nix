@@ -5,15 +5,17 @@ let
   inherit (nixpkgs) pkgs;
 
   f = { mkDerivation, aeson, base, containers, ghcjs-base, mtl
-      , stdenv, stm, text, hsx2hs, lens, random
+      , stdenv, stm, text, hspec, hsx2hs, lens, random
       }:
       mkDerivation {
         pname = "isomaniac";
         version = "0.1.0.0";
         src = ./.;
         libraryHaskellDepends = [
-          aeson base containers ghcjs-base mtl stm text hsx2hs lens random
+          aeson base containers ghcjs-base mtl stm text hsx2hs lens random hspec
         ];
+        testHaskellDepends = [ base containers hspec hsx2hs text ];
+        buildTools = [ pkgs.haskellPackages.cabal-install ];
         license = stdenv.lib.licenses.bsd3;
       };
 

@@ -17,3 +17,16 @@ library
   other-extensions:    ExtendedDefaultRules, FlexibleInstances, MultiParamTypeClasses, OverloadedStrings, QuasiQuotes, TypeFamilies, RankNTypes, JavaScriptFFI
   build-depends:       base >=4.8 && <4.9, aeson, containers, ghcjs-base, lens, mtl, stm, text
   default-language:    Haskell2010
+
+Test-suite spec
+  main-is:             Spec.hs
+  hs-source-dirs:      test
+  type:                exitcode-stdio-1.0
+  build-depends:       base,
+                       containers,
+                       hspec,
+                       hsx2hs,
+                       isomaniac,
+                       text
+  default-language:    Haskell2010
+  ghc-options:         -threaded -O2

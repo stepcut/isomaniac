@@ -113,7 +113,7 @@ mainLoopRemote url h document body (MURV model update view) mInitAction =
           do action <- atomically $ readTQueue queue
              let (model', mremote') = update action model
              let (vdom, canvas) = view model'
-                 diffs = diff oldVDom vdom
+                 diffs = diff oldVDom (Just vdom)
              putStrLn $ "action --> " ++ show action
              putStrLn $ "diff --> " ++ show diffs
              -- update HTML

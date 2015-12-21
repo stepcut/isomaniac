@@ -15,77 +15,94 @@ data Patch action
     | VText Bool Text
     | VNode (HTML action)
     | Props [Attr action] -- FIXME: add list of attributes to remove
+      deriving Eq
 
 instance Show (Patch action) where
-    show Remove = "Remove"
+    show Remove        = "Remove"
     show (Insert node) = "Insert " <> show node
-    show (VText b t) = "VText " <> show b <> " " <> Text.unpack t
-    show (VNode e)  = "VNode " <> show e
+    show (VText b t)   = "VText " <> show b <> " " <> Text.unpack t
+    show (VNode e)     = "VNode " <> show e
     show (Props attrs) = "Props " <> show attrs
 
+diff :: forall action. HTML action -> Maybe (HTML action) -> Map Int [Patch action]
+diff a b = Map.fromListWith (++) (walk a b 0)
 
-diff :: forall action. HTML action -> HTML action -> Map Int [Patch action]
-diff a b = Map.fromListWith (++) (evalState (diff' a b) 0)
-    where
-      inc :: State Int Int
-      inc =
-          do i <- get
-             let i' = i + 1
-             put i'
-             return i'
+-- FIXME: does not handle changes to Events
+-- FIXME: we should be able to add and remove single attributes
+diffAttrs :: [Attr action] -> [Attr action] -> Int -> [(Int, [Patch action])]
+diffAttrs attrsA attrsB index =
+          let attrsA' = [(k,v) | Attr k v <- attrsA]
+              attrsB' = [(k,v) | Attr k v <- attrsB]
+          in if attrsA' == attrsB'
+             then []
+             else [(index, [Props attrsB])]
 
-      diff' :: HTML action -> HTML action -> State Int [(Int, [Patch action])]
-      diff' (Element tagNameA attrsA descendantsA childrenA) b@(Element tagNameB attrsB _ childrenB)
-          | (tagNameA /= tagNameB) || (diffIds attrsA attrsB) =
-              do index <- get
-                 put (index + descendantsA)
-                 return [(index, [VNode b])]
-          | otherwise =
-              do propsPatches    <- diffAttrs attrsA attrsB
-                 index <- get
-                 childrenPatches <- diffChildren index childrenA childrenB
-                 return $ propsPatches ++ childrenPatches
-          where
-            findAttrVal :: Text -> [Attr action] -> Maybe Text
-            findAttrVal _ [] = Nothing
-            findAttrVal n' (Attr n v : _)
-                | n' == n = Just v
-            findAttrVal n (_ : as) = findAttrVal n as
+walk :: HTML action -> Maybe (HTML action) -> Int -> [(Int, [Patch action])]
+walk a mb index =
+  case mb of
+   Nothing -> [(index, [Remove])]
+   (Just b@(Element tagNameB attrsB keyB _ childrenB)) ->
+     case a of
+      (Element tagNameA attrsA keyA descendantsA childrenA)
+        | tagNameA == tagNameB && keyA == keyB ->
+            let propsPatches    = diffAttrs attrsA attrsB index
+                childrenPatches = diffChildren childrenA childrenB index
+            in propsPatches ++ childrenPatches
+      _ -> [(index, [VNode b])]
+   (Just (CDATA escapeB txtB)) ->
+     case a of
+      (CDATA escapeA txtA)
+        | escapeA == escapeB && txtA == txtB -> []
+      _ -> [(index, [VText escapeB txtB])]
 
-            diffIds :: [Attr action] -> [Attr action] -> Bool
-            diffIds attrsA attsrB = (findAttrVal (pack "id") attrsA) /= (findAttrVal (pack "id") attrsB)
+diffChildren :: [HTML action] -> [HTML action] -> Int -> [(Int, [Patch action])]
+diffChildren childrenA childrenB index =
+  case (childrenA, childrenB) of
+   ([], []) -> []
+   ([], (b:bs)) ->
+     (index + 1, [Insert b]) : diffChildren [] bs (index + 1)
+   ((a:as), []) ->
+     (walk a Nothing (index + 1)) ++ (diffChildren as [] (index + 1 + (elementDescendants' a)))
+   ((a:as), (b:bs)) ->
+     (walk a (Just b) (index + 1)) ++ (diffChildren as bs (index + 1 + (elementDescendants' a)))
+  where
+       elementDescendants' (CDATA {}) = 0
+       elementDescendants' e = elementDescendants e
+{-
+diffChildren [] cs index = [(pid, map Insert cs)]
+diffChildren (a:as) (b:bs) index =
+   let d = walk a b (index + 1)
+       diffs = diffChildren pid as bs
+       return $ d ++ diffs
+diffChildren (a:as) [] index =
+  do diffs <- diffChildren pid as []
+     return $ (index, [Remove]) : diffs
+-}
+{-
+      walk (Element tagNameA attrsA keyA descendantsA childrenA) b@(Element tagNameB attrsB keyB _ childrenB)
 
-      diff' (CDATA escapeA txtA) b@(CDATA escapeB txtB)
+      // two cdata that are the same
+      walk (CDATA escapeA txtA) b@(CDATA escapeB txtB)
             | escapeA == escapeB && txtA == txtB =
                 return []
             | otherwise =
                 do index <- get
                    return [(index, [VText escapeB txtB])]
-      diff' (Element _tagNameA _attrsA descendantsA _childrenA) b =
+      walk (Element _tagNameA _attrsA descendantsA _childrenA) b =
           do index <- get
              put (index + descendantsA)
              return [(index, [VNode b])] -- FIXME: this does not work correctly if the node is not the last in the list of children
                                                  -- FIXME: maybe we want VNode?
-      diff' (CDATA{}) b =
+      walk (CDATA{}) b =
           do index <- get
              return [(index, [VNode b])] -- FIXME: this does not work correctly if the node is not the last in the list of children
                                                  -- FIXME: maybe we want VNode?
-      -- FIXME: does not handle changes to Events
-      -- FIXME: we should be able to add and remove single attributes
-      diffAttrs :: [Attr action] -> [Attr action] -> State Int [(Int, [Patch action])]
-      diffAttrs attrsA attrsB =
-          let attrsA' = [(k,v) | Attr k v <- attrsA]
-              attrsB' = [(k,v) | Attr k v <- attrsB]
-          in if attrsA' == attrsB'
-             then return []
-             else do index <- get
-                     return [(index, [Props attrsB])]
       -- FIXME: handle reordered children
       diffChildren :: Int -> [HTML action] -> [HTML action] -> State Int [(Int, [Patch action])]
       diffChildren _ [] [] = return []
       diffChildren pid (a:as) (b:bs) =
           do index <- inc
-             d <- diff' a b
+             d <- walk a b
              diffs <- diffChildren pid as bs
              return $ d ++ diffs
       diffChildren pid (a:as) [] =
@@ -96,3 +113,15 @@ diff a b = Map.fromListWith (++) (evalState (diff' a b) 0)
       diffChildren pid [] cs =
           do index <- get
              return $ [(pid, map Insert cs)]
+-}
+{-
+          where
+            findAttrVal :: Text -> [Attr action] -> Maybe Text
+            findAttrVal _ [] = Nothing
+            findAttrVal n' (Attr n v : _)
+                | n' == n = Just v
+            findAttrVal n (_ : as) = findAttrVal n as
+
+            diffIds :: [Attr action] -> [Attr action] -> Bool
+            diffIds attrsA attsrB = (findAttrVal (pack "id") attrsA) /= (findAttrVal (pack "id") attrsB)
+-}

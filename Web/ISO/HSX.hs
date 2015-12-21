@@ -12,7 +12,7 @@ default (Text)
 
 genElement (d, t) a c =
     let c' = (concat c)
-    in Element t {- [] -} a (descendants c') c'
+    in Element t {- [] -} a Nothing (descendants c') c'
 
 genEElement (d, t) a = genElement (d, t) a []
 

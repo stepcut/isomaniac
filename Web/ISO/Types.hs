@@ -717,6 +717,12 @@ data EventType
 data Attr action
     = Attr Text Text
     | Event (EventType, Maybe JSString -> action)
+
+
+-- | FIXME: this instances is not really right, but was added for the sake of the test suite
+instance Eq (Attr action) where
+  (Attr k1 v1) == (Attr k2 v2) = (k1 == k2) && (v1 == v2)
+  _ == _ = False
 {-
 instance ToJSString EventType where
     toJSString Change = toJSString "change"
@@ -725,23 +731,29 @@ instance ToJSString EventType where
     toJSString Blur   = toJSString "blur"
 -}
 data HTML action
-  = forall a. Element Text {- [(EventType, Parser a, a -> action)] -} [Attr action] Int [HTML action]
+  = forall a. Element { elementName        :: Text
+                      , elementAttrs       :: [Attr action]
+                      , elementKey         :: Maybe Text
+                      , elementDescendants :: Int
+                      , elementChildren    :: [HTML action]
+                      }
   | CDATA Bool Text
 --   | Children [HTML action]
+    deriving Eq
 
 instance Show (Attr action) where
     show (Attr k v) = (Text.unpack k) <> " := " <> (Text.unpack v) <> " "
     show (Event eventType) = "Event "
 
 instance Show (HTML action) where
-    show (Element tagName attrs count children) =
+    show (Element tagName attrs _key _count children) =
         (Text.unpack tagName) <> " [" <> concat (map show attrs) <> "]\n" <> concat (map showChild children)
         where
           showChild c = "    " <> show c <> "\n"
     show (CDATA b txt) = Text.unpack txt
 
 descendants :: [HTML action] -> Int
-descendants elems = sum [ d | Element _ _ d _ <- elems] + (length elems)
+descendants elems = sum [ d | Element _ _ _ d _ <- elems] + (length elems)
 
 {-
 flattenHTML :: HTML action -> HTML action
@@ -751,7 +763,7 @@ flattenHTML (Element t acts attrs children)
 -}
 renderHTML :: forall action m. (MonadIO m) => (action -> IO ()) -> JSDocument -> HTML action -> m (Maybe JSNode)
 renderHTML _ doc (CDATA _ t) = fmap (fmap toJSNode) $ createJSTextNode doc t
-renderHTML handle doc (Element tag {- events -} attrs _ children) =
+renderHTML handle doc (Element tag {- events -} attrs _ _ children) =
     do me <- createJSElement doc tag
        case me of
          Nothing -> return Nothing
