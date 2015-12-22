@@ -50,19 +50,21 @@ data Scale
   | Log
     deriving (Eq, Show, Read)
 
-type Label = JSString
-
 scatterPlot :: Double -- ^ width in pixels
             -> Double -- ^ height in pixels
             -> Scale -- ^ x-scale
-            -> [(Double, Label)] -- ^ x-axis labels, ascending order
+            -> [(Double, Canvas2D)] -- ^ x-axis labels, ascending order
             -> Scale -- ^ y-scale
-            -> [(Double, Label)] -- ^ y-axis labels, ascending order
+            -> [(Double, Canvas2D)] -- ^ y-axis labels, ascending order
             -> [(Double, Double)] -- ^ points
             -> Canvas2D
 scatterPlot width' height' xScale xLabels yScale yLabels points =
-  let height = height' - 40
-      width  = width'  - 110
+  let paddingTop = 20
+      paddingBottom = 60
+      paddingLeft = 110
+      paddingRight = 0
+      height = height' - (paddingTop + paddingBottom)
+      width  = width'  - (paddingLeft + paddingRight)
       xMin = minimum (map fst xLabels)
       xMax = maximum (map fst xLabels)
       yMin = minimum (map fst xLabels)
@@ -70,13 +72,26 @@ scatterPlot width' height' xScale xLabels yScale yLabels points =
       xDelta = xMax - xMin
       yDelta = yMax - yMin
       yOffset = height - yMin
-      toYPos yVal = (height + 20) - ((yVal - yMin) * (height / yDelta))
-      toXPos xVal = 110 + (xVal * (width / xDelta))
+      toYPos yVal = (height + paddingTop) - ((yVal - yMin) * (height / yDelta))
+      toXPos xVal = paddingLeft + (xVal * (width / xDelta))
+      drawXAxis height toXPos (x, label) =
+        [ WithContext2D [Translate (toXPos x) height] [ label ]
+        , Draw (Stroke [ MoveTo (toXPos x) (height+paddingTop)
+                       , LineTo (toXPos x) paddingTop
+                       ])
+        ]
+      drawYAxis width toYPos (y, label) =
+        [ WithContext2D [Translate paddingLeft (toYPos y)] [ label ]
+        , Draw (Stroke [ MoveTo (paddingLeft) (toYPos y)
+                       , LineTo (paddingLeft + width) (toYPos y)
+                       ])
+        ]
+
         -- (height + 20) - ((yVal - yMin) * (height / yDelta))
-  in WithContext2D [Font "18px Times"]
+  in WithContext2D []
        [ -- Draw (FillText "A Scatter Plot" 0.5 20.5 Nothing)
 --       , Draw (FillText "A Scatter Plot" 1 40 Nothing)
-        WithContext2D [Font "18px Times", TextAlign AlignRight]
+        WithContext2D []
           (concat $ concat [ map (drawYAxis width toYPos) yLabels
                            , map (drawXAxis height toXPos) xLabels
                            ])
@@ -85,18 +100,6 @@ scatterPlot width' height' xScale xLabels yScale yLabels points =
        ]
 
   where
-    drawYAxis width toYPos (y, label) =
-      [ Draw (FillText label (100 + 0.5) (toYPos y) Nothing)
-      , Draw (Stroke [ MoveTo (110 + 0.5) (toYPos y)
-                     , LineTo (110 + width + 0.5) (toYPos y)
-                     ])
-      ]
-    drawXAxis height toXPos (x, label) =
-      [ Draw (FillText label (toXPos x) (height + 40) Nothing)
-      , Draw (Stroke [ MoveTo (toXPos x) (height+20)
-                     , LineTo (toXPos x) (20)
-                     ])
-      ]
     drawPoint toXPos toYPos (x, y) =
       let arc = Arc (toXPos x) (toYPos y) 3.0 0 (2*pi) False
       in
@@ -113,7 +116,8 @@ view' (Model c txt) =
                               , LineTo x (y + 10)
                               ])
       points = [ (x*100, y*100) | x <- take 100 (randoms (mkStdGen c)) | y <- take 100 (randoms (mkStdGen (c + 1)))]
-      canvas w h = scatterPlot w h Linear [ (x, JSString.pack (show x)) | x <- [0, 20, 40, 60, 70, 80, 100]] Linear [ (y, JSString.pack (show y)) | y <- [0, 20, 40, 60, 70, 80, 100]] points
+      canvas w h = scatterPlot w h Linear [ (x, WithContext2D [Font "18px Times", TextAlign AlignStart, Translate 0 20, Rotate (pi/2)] [ Draw (FillText (JSString.pack (show x)) 0 0 Nothing)]) | x <- [0, 20, 40, 60, 70, 80, 100]]
+                                   Linear [ (y, WithContext2D [Font "18px Times", TextAlign AlignRight] [Draw (FillText (JSString.pack (show y)) 0 0 Nothing)]) | y <- [0, 20, 40, 60, 70, 80, 100]] points
   in
    ([hsx| <div>
            <h1>Scatter Plot</h1>
