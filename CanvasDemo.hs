@@ -7,6 +7,7 @@ import Data.Text (Text, pack, unpack)
 import qualified Data.JSString as JSString
 import GHCJS.Types (JSRef(..), JSString(..))
 import Language.Haskell.HSX.QQ (hsx)
+import qualified Data.Set as Set
 import System.Random (randoms, mkStdGen)
 import Web.ISO.HSX
 import Web.ISO.Murv
@@ -47,6 +48,7 @@ update' action model =
 data Scale
   = Linear
   | Log
+    deriving (Eq, Show, Read)
 
 type Label = JSString
 
@@ -71,14 +73,14 @@ scatterPlot width' height' xScale xLabels yScale yLabels points =
       toYPos yVal = (height + 20) - ((yVal - yMin) * (height / yDelta))
       toXPos xVal = 110 + (xVal * (width / xDelta))
         -- (height + 20) - ((yVal - yMin) * (height / yDelta))
-  in WithContext2D (set font "18px Times" context2D)
+  in WithContext2D [Font "18px Times"]
        [ -- Draw (FillText "A Scatter Plot" 0.5 20.5 Nothing)
 --       , Draw (FillText "A Scatter Plot" 1 40 Nothing)
-        WithContext2D (set font "18px Times" (set textAlign "right" context2D))
+        WithContext2D [Font "18px Times", TextAlign AlignRight]
           (concat $ concat [ map (drawYAxis width toYPos) yLabels
                            , map (drawXAxis height toXPos) xLabels
                            ])
-       , WithContext2D (set fillStyle (StyleColor (ColorName "green")) context2D)
+       , WithContext2D [FillStyle (StyleColor (ColorName "green"))]
          (concatMap (drawPoint toXPos toYPos) points)
        ]
 
@@ -110,11 +112,6 @@ view' (Model c txt) =
                               , MoveTo x (y - 10)
                               , LineTo x (y + 10)
                               ])
-      canvasOld = WithContext2D context2D
-              [ plus 10 10
-              , plus 30 30
-              , plus 50 50
-              ]
       points = [ (x*100, y*100) | x <- take 100 (randoms (mkStdGen c)) | y <- take 100 (randoms (mkStdGen (c + 1)))]
       canvas w h = scatterPlot w h Linear [ (x, JSString.pack (show x)) | x <- [0, 20, 40, 60, 70, 80, 100]] Linear [ (y, JSString.pack (show y)) | y <- [0, 20, 40, 60, 70, 80, 100]] points
   in

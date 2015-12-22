@@ -1032,6 +1032,14 @@ foreign import javascript unsafe "$1[\"fill\"]()"
 fill :: (MonadIO m) => JSContext2D -> m ()
 fill = liftIO . js_fill
 
+foreign import javascript unsafe "$1[\"lineWidth\"] = $2"
+        js_setLineWidth ::
+        JSContext2D -> Double -> IO ()
+
+setLineWidth :: (MonadIO m) => JSContext2D -> Double -> m ()
+setLineWidth ctx w = liftIO $ js_setLineWidth ctx w
+
+
 -- * Font/Text
 
 foreign import javascript unsafe "$1[\"font\"] = $2"
@@ -1045,8 +1053,23 @@ foreign import javascript unsafe "$1[\"textAlign\"] = $2"
         js_textAlign ::
         JSContext2D -> JSString -> IO ()
 
-setTextAlign :: (MonadIO m) => JSContext2D -> JSString -> m ()
-setTextAlign ctx align = liftIO $ js_textAlign ctx align
+data TextAlign
+  = AlignStart
+  | AlignEnd
+  | AlignLeft
+  | AlignCenter
+  | AlignRight
+    deriving (Eq, Show, Read)
+
+textAlignToJSString :: TextAlign -> JSString
+textAlignToJSString AlignStart  = JS.pack "start"
+textAlignToJSString AlignEnd    = JS.pack "end"
+textAlignToJSString AlignLeft   = JS.pack "left"
+textAlignToJSString AlignCenter = JS.pack "center"
+textAlignToJSString AlignRight  = JS.pack "right"
+
+setTextAlign :: (MonadIO m) => JSContext2D -> TextAlign -> m ()
+setTextAlign ctx align = liftIO $ js_textAlign ctx (textAlignToJSString align)
 
 foreign import javascript unsafe "$1[\"fillText\"]($2, $3, $4)"
   js_fillText :: JSContext2D -> JSString -> Double -> Double -> IO ()
@@ -1065,14 +1088,39 @@ fillText :: (MonadIO m) =>
 fillText ctx txt x y Nothing = liftIO $ js_fillText ctx txt x y
 fillText ctx txt x y (Just maxWidth) = liftIO $ js_fillTextMaxWidth ctx txt x y maxWidth
 
+-- * Various Transformations
+
 foreign import javascript unsafe "$1[\"scale\"]($2, $3)"
   js_scale :: JSContext2D -> Double -> Double -> IO ()
 
 scale :: (MonadIO m) => JSContext2D -> Double -> Double -> m ()
 scale ctx x y = liftIO $ js_scale ctx x y
 
+foreign import javascript unsafe "$1[\"rotate\"]($2)"
+  js_rotate :: JSContext2D -> Double -> IO ()
+
+-- | apply rotation to commands that draw on the canvas
+rotate :: (MonadIO m) =>
+         JSContext2D -- ^ canvas to affect
+      -> Double -- ^ rotation in radians
+      -> m ()
+rotate ctx r = liftIO $ js_rotate ctx r
+
+foreign import javascript unsafe "$1[\"translate\"]($2, $3)"
+  js_translate :: JSContext2D -> Double -> Double -> IO ()
+
+-- | apply translation to commands that draw on the canvas
+translate :: (MonadIO m) =>
+             JSContext2D -- ^ canvas
+          -> Double -- ^ x translation
+          -> Double -- ^ y translation
+          -> m ()
+translate ctx x y = liftIO $ js_translate ctx x y
+
 data Gradient = Gradient
+    deriving (Eq, Show, Read)
 data Pattern = Pattern
+    deriving (Eq, Show, Read)
 
 type Percentage = Double
 type Alpha = Double
@@ -1080,11 +1128,13 @@ type Alpha = Double
 data Color
   = ColorName JSString
   | RGBA Percentage Percentage Percentage Alpha
+    deriving (Eq, Show, Read)
 
 data Style
   = StyleColor Color
   | StyleGradient Gradient
   | StylePattern Pattern
+    deriving (Eq, Show, Read)
 
 data Rect
   = Rect { _rectX      :: Double
@@ -1092,6 +1142,7 @@ data Rect
          , _rectWidth  :: Double
          , _rectHeight :: Double
          }
+  deriving (Eq, Show, Read)
 
 -- https://developer.mozilla.org/en-US/docs/Web/API/Path2D
 data Path2D
@@ -1099,6 +1150,7 @@ data Path2D
   | LineTo Double Double
   | PathRect Rect
   | Arc Double Double Double Double Double Bool
+    deriving (Eq, Show, Read)
 
 data Draw
   = FillRect Rect
@@ -1106,8 +1158,21 @@ data Draw
   | Stroke [Path2D]
   | Fill [Path2D]
   | FillText JSString Double Double (Maybe Double)
+    deriving (Eq, Show, Read)
+
+data Context2D
+  = FillStyle Style
+  | StrokeStyle Style
+  | LineWidth Double
+  | Font JSString
+  | TextAlign TextAlign
+  | Scale Double Double
+  | Translate Double Double
+  | Rotate Double
+    deriving (Eq, Read, Show)
 
 -- | this is not sustainable. A Set of attributes is probably a better choice
+{-
 data Context2D = Context2D
  { _fillStyle   :: Style
  , _strokeStyle :: Style
@@ -1126,16 +1191,18 @@ context2D = Context2D
   , _font        = JS.pack "10px sans-serif"
   , _textAlign   = JS.pack "left"
   }
+-}
 
 data Canvas = Canvas
   { _canvasId :: Text
   , _canvas :: Canvas2D
   }
+  deriving (Eq, Show, Read)
 
 data Canvas2D
-  = WithContext2D Context2D [ Canvas2D ]
+  = WithContext2D [Context2D] [ Canvas2D ]
   | Draw Draw
-
+  deriving (Eq, Show, Read)
 
 mkPath :: (MonadIO m) => JSContext2D -> [Path2D] -> m ()
 mkPath ctx segments =
@@ -1187,25 +1254,33 @@ drawCanvas (Canvas cid content) =
             (Just ctx) -> do
               when (rescaleCanvas) (scale ctx ratio ratio)
               clearRect ctx 0 0 w h
-              drawCanvas' ctx context2D content
+              drawCanvas' ctx content
   where
-    drawCanvas' ctx ctx2d (Draw (FillRect (Rect x y w h))) =
+    drawCanvas' ctx (Draw (FillRect (Rect x y w h))) =
       fillRect ctx x y w h
-    drawCanvas' ctx ctx2d (Draw (ClearRect (Rect x y w h))) =
+    drawCanvas' ctx  (Draw (ClearRect (Rect x y w h))) =
       clearRect ctx x y w h
-    drawCanvas' ctx ctx2d (Draw (Stroke path2D)) =
+    drawCanvas' ctx  (Draw (Stroke path2D)) =
       do mkPath ctx path2D
          stroke ctx
-    drawCanvas' ctx ctx2d (Draw (Fill path2D)) =
+    drawCanvas' ctx  (Draw (Fill path2D)) =
       do mkPath ctx path2D
          fill ctx
-    drawCanvas' ctx ctx2d (Draw (FillText text x y maxWidth)) =
+    drawCanvas' ctx  (Draw (FillText text x y maxWidth)) =
       do fillText ctx text x y maxWidth
-    drawCanvas' ctx oldCtx2d (WithContext2D ctx2d content) =
+    drawCanvas' ctx  (WithContext2D ctx2d content) =
      do save ctx
-        setFillStyle ctx (ctx2d ^. fillStyle)
-        setStrokeStyle ctx (ctx2d ^. strokeStyle)
-        setFont ctx (ctx2d ^. font)
-        setTextAlign ctx (ctx2d ^. textAlign)
-        mapM_ (drawCanvas' ctx ctx2d) content -- NOTE: how to do we deal with things that children have messed with in the ctx? save()/restore()?
+        mapM_ (setContext2D ctx) ctx2d
+        mapM_ (drawCanvas' ctx) content
         restore ctx
+        where
+          setContext2D ctx op =
+            case op of
+             (FillStyle style)   -> setFillStyle ctx style
+             (StrokeStyle style) -> setStrokeStyle ctx style
+             (LineWidth w)       -> setLineWidth ctx w
+             (Font font)         -> setFont ctx font
+             (TextAlign a)       -> setTextAlign ctx a
+             (Scale x y)         -> scale ctx x y
+             (Translate x y)     -> translate ctx x y
+             (Rotate r )         -> rotate ctx r
