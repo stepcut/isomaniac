@@ -8,6 +8,7 @@ import qualified Data.JSString as JSString
 import GHCJS.Types (JSRef(..), JSString(..))
 import Language.Haskell.HSX.QQ (hsx)
 import qualified Data.Set as Set
+import Data.Time.Calendar (Day, toGregorian, fromGregorian, diffDays, showGregorian)
 import System.Random (randoms, mkStdGen)
 import Web.ISO.HSX
 import Web.ISO.Murv
@@ -50,6 +51,24 @@ data Scale
   | Log
     deriving (Eq, Show, Read)
 
+scatterPlotDay :: Double -- ^ width in pixels
+               -> Double -- ^ height in pixels
+               -> Scale  -- ^ x-scale
+               -> Scale  -- ^ y-scale
+               -> [(Double, Canvas2D)] -- ^ y-axis labels, ascending order
+               -> [(Day, Double)] -- ^ points
+               -> Canvas2D
+scatterPlotDay width height xScale yScale yLabels points =
+  let days         = map fst points
+      minDay       = minimum days -- FIXME: fails if list is empty
+      numDays      = diffDays (maximum days) minDay -- FIXME: fails if list is empty
+      dayToFloat d = fromIntegral (diffDays d minDay)
+      dayLabel d   = WithContext2D [Font "18px Times", TextAlign AlignStart, Translate 0 20, Rotate (pi/2)] [ Draw (FillText (JSString.pack (showGregorian d)) 0 0 Nothing)]
+      xLabels      = [ (dayToFloat d, dayLabel d) | (d ,_) <- points ]
+      points'      = [ (dayToFloat d, v) | (d ,v) <- points ]
+  in
+   scatterPlot width height xScale xLabels yScale yLabels points'
+
 scatterPlot :: Double -- ^ width in pixels
             -> Double -- ^ height in pixels
             -> Scale -- ^ x-scale
@@ -60,15 +79,15 @@ scatterPlot :: Double -- ^ width in pixels
             -> Canvas2D
 scatterPlot width' height' xScale xLabels yScale yLabels points =
   let paddingTop = 20
-      paddingBottom = 60
+      paddingBottom = 100
       paddingLeft = 110
-      paddingRight = 0
+      paddingRight = 20
       height = height' - (paddingTop + paddingBottom)
       width  = width'  - (paddingLeft + paddingRight)
       xMin = minimum (map fst xLabels)
       xMax = maximum (map fst xLabels)
-      yMin = minimum (map fst xLabels)
-      yMax = maximum (map fst xLabels)
+      yMin = minimum (map fst yLabels)
+      yMax = maximum (map fst yLabels)
       xDelta = xMax - xMin
       yDelta = yMax - yMin
       yOffset = height - yMin
@@ -87,7 +106,6 @@ scatterPlot width' height' xScale xLabels yScale yLabels points =
                        ])
         ]
 
-        -- (height + 20) - ((yVal - yMin) * (height / yDelta))
   in WithContext2D []
        [ -- Draw (FillText "A Scatter Plot" 0.5 20.5 Nothing)
 --       , Draw (FillText "A Scatter Plot" 1 40 Nothing)
@@ -115,9 +133,14 @@ view' (Model c txt) =
                               , MoveTo x (y - 10)
                               , LineTo x (y + 10)
                               ])
-      points = [ (x*100, y*100) | x <- take 100 (randoms (mkStdGen c)) | y <- take 100 (randoms (mkStdGen (c + 1)))]
-      canvas w h = scatterPlot w h Linear [ (x, WithContext2D [Font "18px Times", TextAlign AlignStart, Translate 0 20, Rotate (pi/2)] [ Draw (FillText (JSString.pack (show x)) 0 0 Nothing)]) | x <- [0, 20, 40, 60, 70, 80, 100]]
-                                   Linear [ (y, WithContext2D [Font "18px Times", TextAlign AlignRight] [Draw (FillText (JSString.pack (show y)) 0 0 Nothing)]) | y <- [0, 20, 40, 60, 70, 80, 100]] points
+      december = [ fromGregorian 2015 12 d | d <- [1..31]  ]
+      points = [ (day, y*100) | day <- december | y <- take 31 (randoms (mkStdGen (c + 1)))]
+--      canvas w h = scatterPlot w h Linear [ (x, WithContext2D [Font "18px Times", TextAlign AlignStart, Translate 0 20, Rotate (pi/2)] [ Draw (FillText (JSString.pack (show x)) 0 0 Nothing)]) | x <- [0, 20, 40, 60, 70, 80, 100]]
+--                                   Linear [ (y, WithContext2D [Font "18px Times", TextAlign AlignRight] [Draw (FillText (JSString.pack (show y)) 0 0 Nothing)]) | y <- [0, 20, 40, 60, 70, 80, 100]] points
+      canvas w h = scatterPlotDay w h
+                     Linear
+                     Linear [ (y, WithContext2D [Font "18px Times", TextAlign AlignRight] [Draw (FillText (JSString.pack (show y)) 0 0 Nothing)]) | y <- [0, 20, 40, 60, 70, 80, 100]] points
+
   in
    ([hsx| <div>
            <h1>Scatter Plot</h1>
