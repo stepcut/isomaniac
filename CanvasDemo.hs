@@ -171,7 +171,6 @@ counter = MURV
 main :: IO ()
 main = murv "http://localhost:8000/api" Msg counter Nothing
 
-      
 {-
 v        (WithContext2D (set fillStyle (StyleColor (ColorName "green")) context2D)
            [ Draw (FillRect (Rect 0 0 10 10))
