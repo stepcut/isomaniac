@@ -3,8 +3,9 @@ module Web.ISO.HSX where
 
 import Data.Monoid ((<>))
 import Data.Text (Text, pack, unpack)
-import GHCJS.Types (JSString(..))
-import Web.ISO.Types (Attr(Attr, Event), EventType(Change, Click, Input, Blur), HTML(Element, CDATA), descendants)
+import GHCJS.Marshal.Pure (pFromJSVal)
+import GHCJS.Types (JSVal(..), JSString(..))
+import Web.ISO.Types (Attr(Attr, Event), HTML(Element, CDATA), FormEvent(Blur, Change, Input), MouseEvent(Click), descendants)
 
 default (Text)
 
@@ -44,21 +45,21 @@ instance AsAttr action (KV Text Text) where
 instance AsAttr action (KV Text action) where
     asAttr (type' := action) =
         case type' of
-          "onchange" -> Event (Change, const action)
-          "onclick"  -> Event (Click, const action)
-          "oninput"  -> Event (Input, const action)
-          "onblur"   -> Event (Blur, const action)
+          "onchange" -> Event Change (const $ pure action)
+          "onclick"  -> Event Click  (const $ pure action)
+          "oninput"  -> Event Input  (const $ pure action)
+          "onblur"   -> Event Blur   (const $ pure action)
           _ -> error $ "unsupported event: " ++ (unpack type')
-
-instance AsAttr action (KV Text (Maybe JSString -> action)) where
+{-
+instance AsAttr action (KV Text (JSVal -> action)) where
     asAttr (type' := action) =
         case type' of
-          "onchange" -> Event (Change, action)
-          "onclick"  -> Event (Click, action)
-          "oninput"  -> Event (Input, action)
-          "onblur"   -> Event (Blur, action)
+          "onchange" -> Event Change (action . pFromJSVal)
+--          "onclick"  -> Event Click  action
+--          "oninput"  -> Event Input  action
+--          "onblur"   -> Event Blur   action
           _ -> error $ "unsupported event: " ++ (unpack type')
-
+-}
 {-
 instance AsAttr action (KV Text (IO String, (String -> action), action)) where
     asAttr (type' := action) =

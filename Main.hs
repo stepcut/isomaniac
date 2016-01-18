@@ -3,7 +3,7 @@ module Main where
 
 import Control.Monad.Trans (liftIO)
 import Data.Text (Text, pack, unpack)
-import GHCJS.Foreign(fromJSString)
+import qualified Data.JSString as JS
 import GHCJS.Types (JSRef(..), JSString(..))
 import Language.Haskell.HSX.QQ (hsx)
 import Web.ISO.HSX
@@ -37,22 +37,22 @@ update' action model =
       Decrement -> (model { count = (count model) - 1 }, Just "dec")
       Msg txt   -> (model { msg = txt }, Nothing)
       Set (Just jstr)  ->
-          case reads (fromJSString jstr) :: [(Int, String)] of
+          case reads (JS.unpack jstr) :: [(Int, String)] of
             [(n, _)] -> (model { count = n }, Just "set")
             _ -> (model, Nothing)
       Set _ -> (model, Nothing)
 
 {- View -}
-view' :: Model -> HTML Action
+view' :: Model -> (HTML Action, [Canvas])
 view' (Model c txt) =
-    [hsx| <div>
-            <p>The count is <% show c %></p>
-            <button onclick=Decrement>-</button>
-            <button onclick=Increment>+</button>
-            <input type="text" oninput=Set value=(pack $ show c) />
-            <p><% txt %></p>
-          </div>
-        |]
+    ([hsx| <div>
+             <p>The count is <% show c %></p>
+             <button onclick=Decrement>-</button>
+             <button onclick=Increment>+</button>
+             <input type="text" value=(pack $ show c) [Event Input (\e -> fmap Set (getValue =<< (target e))) ] />
+             <p><% txt %></p>
+           </div>
+         |], [])
 
 counter :: MURV Model Action Text
 counter = MURV

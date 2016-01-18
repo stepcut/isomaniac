@@ -8,7 +8,7 @@ import Control.Monad.Trans (MonadIO(..))
 import Data.Text (Text)
 import Data.JSString.Text (textToJSString)
 import GHCJS.Foreign (jsNull)
-import GHCJS.Foreign.Callback (asyncCallback)
+import GHCJS.Foreign.Callback (asyncCallback1)
 import GHCJS.Types (JSString(..))
 import Web.ISO.Diff
 import Web.ISO.Patch
@@ -94,8 +94,8 @@ mainLoopRemote url h document body (MURV model update view) mInitAction =
        mapM_ drawCanvas canvases
        -- xhr request
        xhr <- newXMLHttpRequest
-       cb <- asyncCallback (handleXHR queue xhr)
-       addEventListener xhr ReadyStateChange cb False
+--       cb <- asyncCallback1 (\_ -> handleXHR queue xhr)
+       addEventListener xhr ReadyStateChange (\_ -> handleXHR queue xhr) False
 --       remoteLoop queue xhr
        case mInitAction of
          (Just initAction) ->

@@ -1,4 +1,4 @@
-{-# LANGUAGE JavaScriptFFI, ExistentialQuantification, ScopedTypeVariables, TemplateHaskell  #-}
+{-# LANGUAGE ExistentialQuantification, FlexibleContexts, FlexibleInstances, GADTs, JavaScriptFFI, ScopedTypeVariables, TemplateHaskell, TypeFamilies #-}
 module Web.ISO.Types where
 
 import Control.Lens ((^.))
@@ -17,9 +17,9 @@ import qualified Data.Text as Text
 -- import JavaScript.TypedArray.ArrayBuffer (ArrayBuffer)
 import GHCJS.Buffer
 import GHCJS.Foreign (jsNull)
-import GHCJS.Foreign.Callback (Callback, asyncCallback)
+import GHCJS.Foreign.Callback (Callback, asyncCallback1)
 import GHCJS.Marshal (ToJSVal(..), FromJSVal(..))
-import GHCJS.Marshal.Pure (PToJSVal(pToJSVal))
+import GHCJS.Marshal.Pure (PToJSVal(pToJSVal), PFromJSVal(pFromJSVal))
 import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
 import GHCJS.Types (JSVal(..), JSString(..),  nullRef, isNull, isUndefined)
 
@@ -470,15 +470,296 @@ class IsEventTarget o where
 instance IsEventTarget JSElement where
     toEventTarget = EventTarget . unJSElement
 
+
+class IsEvent ev where
+  eventToJSString :: ev -> JSString
+
+data Event
+  = ReadyStateChange
+  deriving (Eq, Show, Read)
+
+instance IsEvent Event where
+  eventToJSString ReadyStateChange = JS.pack "readystatechange"
+
+data MouseEvent
+  = Click
+  | ContextMenu
+  | DblClick
+  | MouseDown
+  | MouseEnter
+  | MouseLeave
+  | MouseMove
+  | MouseOver
+  | MouseOut
+  | MouseUp
+    deriving (Eq, Show, Read)
+
+instance IsEvent MouseEvent where
+  eventToJSString Click       = JS.pack "click"
+  eventToJSString ContextMenu = JS.pack "contextmenu"
+  eventToJSString DblClick    = JS.pack "dblclick"
+  eventToJSString MouseDown   = JS.pack "MouseDown"
+  eventToJSString MouseEnter  = JS.pack "MouseEnter"
+  eventToJSString MouseLeave  = JS.pack "MouseLeave"
+  eventToJSString MouseMove   = JS.pack "MouseMove"
+  eventToJSString MouseOver   = JS.pack "MouseOver"
+  eventToJSString MouseOut    = JS.pack "MouseOut"
+  eventToJSString MouseUp     = JS.pack "MouseUp"
+
+data KeyboardEvent
+  = KeyDown
+  | KeyPress
+  | KeyUp
+    deriving (Eq, Show, Read)
+
+instance IsEvent KeyboardEvent where
+  eventToJSString KeyDown  = JS.pack "keydown"
+  eventToJSString KeyPress = JS.pack "keypress"
+  eventToJSString KeyUp    = JS.pack "keyup"
+
+data FrameEvent
+  = FrameAbort
+  | BeforeUnload
+  | FrameError
+  | HashChange
+  | Load
+  | PageShow
+  | PageHide
+  | Resize
+  | Scroll
+  | Unload
+    deriving (Eq, Show, Read)
+
+data FormEvent
+  = Blur
+  | Change
+  | Focus
+  | FocusIn
+  | FocusOut
+  | Input
+  | Invalid
+  | Reset
+  | Search
+  | Select
+  | Submit
+  deriving (Eq, Show, Read)
+
+instance IsEvent FormEvent where
+  eventToJSString Blur     = JS.pack "blur"
+  eventToJSString Change   = JS.pack "change"
+  eventToJSString Focus    = JS.pack "focus"
+  eventToJSString FocusIn  = JS.pack "focusin"
+  eventToJSString FocusOut = JS.pack "focusout"
+  eventToJSString Input    = JS.pack "input"
+  eventToJSString Invalid  = JS.pack "invalid"
+  eventToJSString Reset    = JS.pack "reset"
+  eventToJSString Search   = JS.pack "search"
+  eventToJSString Select   = JS.pack "select"
+  eventToJSString Submit   = JS.pack "submit"
+
+data DragEvent
+  = Drag
+  | DragEnd
+  | DragEnter
+  | DragLeave
+  | DragOver
+  | DragStart
+  | Drop
+  deriving (Eq, Show, Read)
+
+data ClipboardEvent
+  = Copy
+  | Cut
+  | Paste
+  deriving (Eq, Show, Read)
+
+data PrintEvent
+  = AfterPrint
+  | BeforePrint
+  deriving (Eq, Show, Read)
+
+data MediaEvent
+  = MediaAbort
+  | CanPlay
+  | CanPlayThrough
+  | DurationChange
+  | Emptied
+  | Ended
+  | MediaError
+  | LoadedData
+  | LoadedMetaData
+  | LoadStart
+  | Pause
+  | Play
+  | Playing
+  | Progress
+  | RateChange
+  | Seeked
+  | Seeking
+  | Stalled
+  | Suspend
+  | TimeUpdate
+  | VolumeChange
+  | Waiting
+  deriving (Eq, Show, Read)
+
+data AnimationEvent
+  = AnimationEnd
+  | AnimationInteration
+  | AnimationStart
+  deriving (Eq, Show, Read)
+
+data TransitionEvent
+  = TransitionEnd
+  deriving (Eq, Show, Read)
+
+data ServerSentEvent
+  = ServerError
+  | ServerMessage
+  | Open
+    deriving (Eq, Show, Read)
+
+data MiscEvent
+  = MiscMessage
+  | Online
+  | Offline
+  | PopState
+  | MiscShow
+  | Storage
+  | Toggle
+  | Wheel
+  deriving (Eq, Show, Read)
+
+data TouchEvent
+  = TouchCancel
+  | TouchEnd
+  | TouchMove
+  | TouchStart
+  deriving (Eq, Show, Read)
+
+data EventType
+  = MouseEvent MouseEvent
+  | KeyboardEvent KeyboardEvent
+  | FrameEvent FrameEvent
+  | FormEvent FormEvent
+  | DragEvent DragEvent
+  | ClipboardEvent ClipboardEvent
+  | PrintEvent PrintEvent
+  | MediaEvent MediaEvent
+  | AnimationEvent AnimationEvent
+  | TransitionEvent TransitionEvent
+  | ServerSentEvent ServerSentEvent
+  | MiscEvent MiscEvent
+  | TouchEvent TouchEvent
+  deriving (Eq, Show, Read)
+
+-- * Event Objects
+
+-- http://www.w3schools.com/jsref/dom_obj_event.asp
+
+class IsEventObject obj where
+  asEventObject        :: obj -> EventObject
+
+-- * EventObject
+
+newtype EventObject = EventObject { unEventObject :: JSVal }
+
+instance ToJSVal EventObject where
+  toJSVal = return . unEventObject
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal EventObject where
+  fromJSVal = return . fmap EventObject . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+instance IsEventObject EventObject where
+  asEventObject = id
+
+foreign import javascript unsafe "$1[\"target\"]" js_target ::
+        EventObject -> IO JSVal
+
+target :: (IsEventObject obj, MonadIO m) => obj -> m JSElement
+target obj = liftIO (fromJSValUnchecked =<< (js_target (asEventObject obj)))
+
+-- * MouseEventObject
+
+newtype MouseEventObject = MouseEventObject { unMouseEventObject :: JSVal }
+
+instance ToJSVal MouseEventObject where
+  toJSVal = return . unMouseEventObject
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal MouseEventObject where
+  fromJSVal = return . fmap MouseEventObject . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+-- * KeyboardEventObject
+
+newtype KeyboardEventObject = KeyboardEventObject { unKeyboardEventObject :: JSVal }
+
+instance ToJSVal KeyboardEventObject where
+  toJSVal = return . unKeyboardEventObject
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal KeyboardEventObject where
+  fromJSVal = return . fmap KeyboardEventObject . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+foreign import javascript unsafe "$1[\"charCode\"]" charCode ::
+        KeyboardEventObject -> Int
+
+-- charCode :: (MonadIO m) => KeyboardEventObject -> IO 
+
+{-
+-- * FormEventObject
+
+newtype FormEventObject = FormEventObject { unFormEventObject :: JSVal }
+
+instance ToJSVal FormEventObject where
+  toJSVal = return . unFormEventObject
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal FormEventObject where
+  fromJSVal = return . fmap FormEventObject . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+-}
+-- * EventObjectOf
+
+type family EventObjectOf event :: *
+type instance EventObjectOf Event         = EventObject
+type instance EventObjectOf MouseEvent    = MouseEventObject
+type instance EventObjectOf KeyboardEvent = KeyboardEventObject
+type instance EventObjectOf FormEvent     = EventObject
+
+-- * addEventListener
+
 -- FIXME: Element is overly restrictive
 foreign import javascript unsafe "$1[\"addEventListener\"]($2, $3,\n$4)"
-   js_addEventListener ::
-       EventTarget -> JSString -> Callback (IO ()) -> Bool -> IO ()
+   js_addEventListener :: EventTarget -> JSString -> Callback (JSVal -> IO ()) -> Bool -> IO ()
 
+addEventListener :: (MonadIO m, IsEventTarget self, IsEvent event, FromJSVal (EventObjectOf event)) =>
+                  self
+               -> event
+               -> (EventObjectOf event -> IO ())
+               -> Bool
+               -> m ()
+addEventListener self event callback useCapture = liftIO $
+  do cb <- asyncCallback1 callback'
+     js_addEventListener (toEventTarget self) (eventToJSString event) cb useCapture
+  where
+    callback' = \ev ->
+         do (Just eventObject) <- fromJSVal ev
+            callback eventObject
+
+{-
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/EventTarget.addEventListener Mozilla EventTarget.addEventListener documentation>
-addEventListener ::
-                 (MonadIO m, IsEventTarget self) =>
-                   self -> EventType -> Callback (IO ()) -> Bool -> m ()
+addEventListener
+  :: (MonadIO m, IsEventTarget self) =>
+     self
+  -> EventType
+  -> Callback (IO ())
+  -> Bool
+  -> m ()
 addEventListener self type' listener useCapture
   = liftIO
       (js_addEventListener (toEventTarget self)
@@ -492,10 +773,13 @@ addEventListener self type' listener useCapture
                           Click  -> JS.pack "click"
                           Input  -> JS.pack "input"
                           Blur   -> JS.pack "blur"
+                          Keydown -> JS.pack "keydown"
+                          Keyup   -> JS.pack "keyup"
+                          Keypress -> JS.pack "keypress"
                           ReadyStateChange -> JS.pack "readystatechange"
                           EventTxt s -> s
 
-
+-}
 -- * XMLHttpRequest
 newtype XMLHttpRequest = XMLHttpRequest { unXMLHttpRequest :: JSVal }
 
@@ -760,30 +1044,15 @@ foreign import javascript unsafe "$1[\"responseURL\"]"
 
 -- * Pure HTML
 
-data EventType
-    = Change
-    | Click
-    | Input
-    | Blur
-    | ReadyStateChange
-    | EventTxt JSString
-
-data Attr action
-    = Attr Text Text
-    | Event (EventType, Maybe JSString -> action)
-
+data Attr action where
+  Attr  :: Text -> Text -> Attr action
+  Event :: (FromJSVal (EventObjectOf event), IsEvent event) => event -> (EventObjectOf event -> IO action) -> Attr action
 
 -- | FIXME: this instances is not really right, but was added for the sake of the test suite
 instance Eq (Attr action) where
   (Attr k1 v1) == (Attr k2 v2) = (k1 == k2) && (v1 == v2)
   _ == _ = False
-{-
-instance ToJSString EventType where
-    toJSString Change = toJSString "change"
-    toJSString Click  = toJSString "click"
-    toJSString Input  = toJSString "input"
-    toJSString Blur   = toJSString "blur"
--}
+
 data HTML action
   = forall a. Element { elementName        :: Text
                       , elementAttrs       :: [Attr action]
@@ -797,7 +1066,7 @@ data HTML action
 
 instance Show (Attr action) where
     show (Attr k v) = (Text.unpack k) <> " := " <> (Text.unpack v) <> " "
-    show (Event eventType) = "Event "
+    show (Event _eventType _) = "Event " -- ++ show eventType ++ " <function>"
 
 instance Show (HTML action) where
     show (Element tagName attrs _key _count children) =
@@ -809,12 +1078,6 @@ instance Show (HTML action) where
 descendants :: [HTML action] -> Int
 descendants elems = sum [ d | Element _ _ _ d _ <- elems] + (length elems)
 
-{-
-flattenHTML :: HTML action -> HTML action
-flattenHTML h@(CDATA _ _) = h
-flattenHTML h@(Children _) = h
-flattenHTML (Element t acts attrs children)
--}
 renderHTML :: forall action m. (MonadIO m) => (action -> IO ()) -> JSDocument -> HTML action -> m (Maybe JSNode)
 renderHTML _ doc (CDATA _ t) = fmap (fmap toJSNode) $ createJSTextNode doc t
 renderHTML handle doc (Element tag {- events -} attrs _ _ children) =
@@ -823,102 +1086,32 @@ renderHTML handle doc (Element tag {- events -} attrs _ _ children) =
          Nothing -> return Nothing
          (Just e) ->
              do mapM_ (\c -> appendChild e =<< renderHTML handle doc c) children
-                let events' = [ ev | Event ev <- attrs]
+                mapM_ (doAttr e) attrs
+                {-
+                let events' = [ ev | ev@(Event ev f) <- attrs]
                     attrs'  = [ (k,v) | Attr k v <- attrs]
                 liftIO $ mapM_ (\(k, v) -> setAttribute e k v) attrs'
                 liftIO $ mapM_ (handleEvent e) events'
+                -}
                 return (Just $ toJSNode e)
     where
+      doAttr elem (Attr k v)   = setAttribute elem k v
+      doAttr elem (Event eventType toAction) =
+           addEventListener elem eventType (\e -> handle =<< toAction e) False
+{-
       handle' :: JSElement -> (Maybe JSString -> action) -> IO ()
       handle' elem toAction =
           do ms <- getValue elem
              handle (toAction ms)
-      handleEvent :: JSElement -> (EventType, Maybe JSString -> action) -> IO ()
-      handleEvent elem (eventType, toAction) =
-          do cb <- asyncCallback (handle' elem toAction) -- FIXME: free ?
-             addEventListener elem eventType cb False
-
-
+-}
+--       handleEvent :: JSElement -> Attr (event, EventObjectOf event -> action) -> IO ()
 {-
-data MUV  model action = MUV
-    { model  :: model
-    , update :: action -> model -> model
-    , view   :: model  -> HTML action
-    }
-
-mainLoop :: JSDocument -> JSNode -> MUV model action -> IO ()
-mainLoop document body (MUV model update view) =
-    do queue <- atomically newTQueue
-       html <- renderHTML (handleAction queue) document (view model)
-       removeChildren body
-       appendJSChild body html
-       loop queue model
-    where
-      handleAction queue = \action -> atomically $ writeTQueue queue action
-      loop queue model =
-          do action <- atomically $ readTQueue queue
-             let model' = update action model
-             html <- renderHTML (handleAction queue) document (view model')
-             removeChildren body
-             appendJSChild body html
-             loop queue model'
-
-muv :: MUV model action -> IO ()
-muv m =
-    do (Just document) <- currentDocument
-       (Just bodyList) <- getElementsByTagName document "body"
-       (Just body)     <- item bodyList 0
-       mainLoop document body m
+      handleEvent elem (Event eventType toAction) =
+        addEventListener elem eventType (\e -> handle =<< toAction e) False
 -}
 {-
-data MURV  model action remote = MURV
-    { model  :: model
-    , update :: action -> model -> (model, Maybe remote)
-    , view   :: model  -> HTML action
-    }
-
-mainLoopRemote :: (ToJSString remote) => Text -> (Text -> action) -> JSDocument -> JSNode -> MURV model action remote -> IO ()
-mainLoopRemote url h document body (MURV model update view) =
-    do queue <- atomically newTQueue
-       html <- renderHTML (handleAction queue) document (view model)
-       removeChildren body
-       appendJSChild body html
-       xhr <- newXMLHttpRequest
-       cb <- asyncCallback AlwaysRetain (handleXHR queue xhr)
-       addEventListener xhr "readystatechange" cb False
---       remoteLoop queue xhr
-       loop xhr queue model
-    where
-      handleXHR queue xhr =
-          do t <- getResponseText xhr
-             atomically $ writeTQueue queue (h t)
-      handleAction queue = \action -> atomically $ writeTQueue queue action
---      remoteLoop queue xhr = forkIO $
---          return ()
-      loop xhr queue model =
-          do action <- atomically $ readTQueue queue
-             let (model', mremote') = update action model
-             html <- renderHTML (handleAction queue) document (view model')
-             removeChildren body
-             appendJSChild body html
-             case mremote' of
-               Nothing -> return ()
-               (Just remote) ->
-                   do open xhr "POST" url True
-                      sendString xhr (toJSString remote)
-             loop xhr queue model'
-
-murv :: (ToJSString remote) => Text -> (Text -> action) -> MURV model action remote -> IO ()
-murv url h m =
-    do (Just document) <- currentDocument
-       murv <- do mmurv <- getElementById document "murv"
-                  case mmurv of
-                    (Just murv) -> return (toJSNode murv)
-                    Nothing ->
-                        do (Just bodyList) <- getElementsByTagName document "body"
-                           (Just body)     <- item bodyList 0
-                           return body
-       mainLoopRemote url h document murv m
+          do cb <- asyncCallback (handle' elem toAction) -- FIXME: free ?
+             addEventListener elem eventType cb False
 -}
 
 -- * Canvas
@@ -1172,26 +1365,6 @@ data Context2D
     deriving (Eq, Read, Show)
 
 -- | this is not sustainable. A Set of attributes is probably a better choice
-{-
-data Context2D = Context2D
- { _fillStyle   :: Style
- , _strokeStyle :: Style
- , _lineWidth   :: Double
- , _font        :: JSString
- , _textAlign   :: JSString
- }
-
-makeLenses ''Context2D
-
-context2D :: Context2D
-context2D = Context2D
-  { _fillStyle   = StyleColor (ColorName $ JS.pack "black") -- technically should be #000
-  , _strokeStyle = StyleColor (ColorName $ JS.pack "black") -- technically should be #000
-  , _lineWidth   = 1.0
-  , _font        = JS.pack "10px sans-serif"
-  , _textAlign   = JS.pack "left"
-  }
--}
 
 data Canvas = Canvas
   { _canvasId :: Text
