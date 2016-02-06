@@ -17,7 +17,7 @@ import qualified Data.Text as Text
 -- import JavaScript.TypedArray.ArrayBuffer (ArrayBuffer)
 import GHCJS.Buffer
 import GHCJS.Foreign (jsNull)
-import GHCJS.Foreign.Callback (Callback, asyncCallback1)
+import GHCJS.Foreign.Callback (OnBlocked(..), Callback, asyncCallback1, syncCallback1)
 import GHCJS.Marshal (ToJSVal(..), FromJSVal(..))
 import GHCJS.Marshal.Pure (PToJSVal(pToJSVal), PFromJSVal(pFromJSVal))
 import GHCJS.Nullable (Nullable(..), nullableToMaybe, maybeToNullable)
@@ -132,6 +132,9 @@ instance IsJSNode JSDocument where
 foreign import javascript unsafe "new window[\"Document\"]()"
         js_newDocument :: IO JSDocument
 
+instance IsEventTarget JSDocument where
+    toEventTarget = EventTarget . unJSDocument
+
 -- | <https://developer.mozilla.org/en-US/docs/Web/API/Document Mozilla Document documentation>
 newJSDocument :: (MonadIO m) => m JSDocument
 newJSDocument = liftIO js_newDocument
@@ -156,6 +159,9 @@ instance FromJSVal JSWindow where
 
 foreign import javascript unsafe "$r = window"
   js_window :: IO JSWindow
+
+instance IsEventTarget JSWindow where
+    toEventTarget = EventTarget . unJSWindow
 
 window :: (MonadIO m) => m JSWindow
 window = liftIO js_window
@@ -183,6 +189,30 @@ instance FromJSVal JSElement where
 instance IsJSNode JSElement where
     toJSNode = JSNode . unJSElement
 
+foreign import javascript unsafe "$1[\"clientLeft\"]"
+        js_getClientLeft :: JSElement -> IO Double
+
+getClientLeft :: (MonadIO m) => JSElement -> m Double
+getClientLeft = liftIO . js_getClientLeft
+
+foreign import javascript unsafe "$1[\"clientTop\"]"
+        js_getClientTop :: JSElement -> IO Double
+
+getClientTop :: (MonadIO m) => JSElement -> m Double
+getClientTop = liftIO . js_getClientTop
+
+foreign import javascript unsafe "$1[\"clientWidth\"]"
+        js_getClientWidth :: JSElement -> IO Double
+
+getClientWidth :: (MonadIO m) => JSElement -> m Double
+getClientWidth = liftIO . js_getClientWidth
+
+foreign import javascript unsafe "$1[\"clientHeight\"]"
+        js_getClientHeight :: JSElement -> IO Double
+
+getClientHeight :: (MonadIO m) => JSElement -> m Double
+getClientHeight = liftIO . js_getClientHeight
+
 -- * createJSElement
 
 foreign import javascript unsafe "$1[\"createElement\"]($2)"
@@ -196,6 +226,14 @@ createJSElement ::
 createJSElement document tagName
   = liftIO ((js_createJSElement document (textToJSString tagName))
             >>= return . Just)
+
+-- * innerHTML
+
+foreign import javascript unsafe "$1[\"innerHTML\"] = $2"
+        js_setInnerHTML :: JSElement -> JSString -> IO ()
+
+setInnerHTML :: (MonadIO m) => JSElement -> JSString -> m ()
+setInnerHTML elm content = liftIO $ js_setInnerHTML elm content
 
 -- * childNodes
 
@@ -522,7 +560,7 @@ data FrameEvent
   | BeforeUnload
   | FrameError
   | HashChange
-  | Load
+  | FrameLoad
   | PageShow
   | PageHide
   | Resize
@@ -579,8 +617,7 @@ data PrintEvent
   deriving (Eq, Show, Read)
 
 data MediaEvent
-  = MediaAbort
-  | CanPlay
+  = CanPlay
   | CanPlayThrough
   | DurationChange
   | Emptied
@@ -588,11 +625,9 @@ data MediaEvent
   | MediaError
   | LoadedData
   | LoadedMetaData
-  | LoadStart
   | Pause
   | Play
   | Playing
-  | Progress
   | RateChange
   | Seeked
   | Seeking
@@ -602,6 +637,25 @@ data MediaEvent
   | VolumeChange
   | Waiting
   deriving (Eq, Show, Read)
+
+data ProgressEvent
+  = LoadStart
+  | Progress
+  | ProgressAbort
+  | ProgressError
+  | ProgressLoad
+  | Timeout
+  | LoadEnd
+  deriving (Eq, Show, Read)
+
+instance IsEvent ProgressEvent where
+  eventToJSString LoadStart     = JS.pack "loadstart"
+  eventToJSString Progress      = JS.pack "progress"
+  eventToJSString ProgressAbort = JS.pack "abort"
+  eventToJSString ProgressError = JS.pack "error"
+  eventToJSString ProgressLoad  = JS.pack "load"
+  eventToJSString Timeout       = JS.pack "timeout"
+  eventToJSString LoadEnd       = JS.pack "loadend"
 
 data AnimationEvent
   = AnimationEnd
@@ -636,6 +690,9 @@ data TouchEvent
   | TouchMove
   | TouchStart
   deriving (Eq, Show, Read)
+
+-- https://developer.mozilla.org/en-US/docs/Web/API/ProgressEvent
+-- data ProgressEvent =
 
 data EventType
   = MouseEvent MouseEvent
@@ -675,15 +732,38 @@ instance FromJSVal EventObject where
 instance IsEventObject EventObject where
   asEventObject = id
 
+foreign import javascript unsafe "$1[\"defaultPrevented\"]" js_defaultPrevented ::
+        EventObject -> IO Bool
+
+defaultPrevented :: (IsEventObject obj, MonadIO m) => obj -> m Bool
+defaultPrevented obj = liftIO (js_defaultPrevented (asEventObject obj))
+
 foreign import javascript unsafe "$1[\"target\"]" js_target ::
         EventObject -> IO JSVal
 
 target :: (IsEventObject obj, MonadIO m) => obj -> m JSElement
 target obj = liftIO (fromJSValUnchecked =<< (js_target (asEventObject obj)))
 
+foreign import javascript unsafe "$1[\"preventDefault\"]()" js_preventDefault ::
+        EventObject -> IO ()
+
+preventDefault :: (IsEventObject obj, MonadIO m) => obj -> m ()
+preventDefault obj = liftIO (js_preventDefault (asEventObject obj))
+
+
+
+foreign import javascript unsafe "$1[\"stopPropagation\"]()" js_stopPropagation ::
+        EventObject -> IO ()
+
+stopPropagation :: (IsEventObject obj, MonadIO m) => obj -> m ()
+stopPropagation obj = liftIO (js_stopPropagation (asEventObject obj))
+
 -- * MouseEventObject
 
 newtype MouseEventObject = MouseEventObject { unMouseEventObject :: JSVal }
+
+instance Show MouseEventObject where
+  show _ = "MouseEventObject"
 
 instance ToJSVal MouseEventObject where
   toJSVal = return . unMouseEventObject
@@ -692,6 +772,18 @@ instance ToJSVal MouseEventObject where
 instance FromJSVal MouseEventObject where
   fromJSVal = return . fmap MouseEventObject . maybeJSNullOrUndefined
   {-# INLINE fromJSVal #-}
+
+instance IsEventObject MouseEventObject where
+  asEventObject (MouseEventObject jsval) = EventObject jsval
+
+foreign import javascript unsafe "$1[\"clientX\"]" clientX ::
+        MouseEventObject -> Double
+
+foreign import javascript unsafe "$1[\"clientY\"]" clientY ::
+        MouseEventObject -> Double
+
+foreign import javascript unsafe "$1[\"button\"]" button ::
+        MouseEventObject -> Int
 
 -- * KeyboardEventObject
 
@@ -705,8 +797,26 @@ instance FromJSVal KeyboardEventObject where
   fromJSVal = return . fmap KeyboardEventObject . maybeJSNullOrUndefined
   {-# INLINE fromJSVal #-}
 
+instance IsEventObject KeyboardEventObject where
+  asEventObject (KeyboardEventObject jsval) = EventObject jsval
+
 foreign import javascript unsafe "$1[\"charCode\"]" charCode ::
         KeyboardEventObject -> Int
+
+foreign import javascript unsafe "$1[\"keyCode\"]" keyCode ::
+        KeyboardEventObject -> Int
+
+-- * ProgressEventObject
+
+newtype ProgressEventObject = ProgressEventObject { unProgressEventObject :: JSVal }
+
+instance ToJSVal ProgressEventObject where
+  toJSVal = return . unProgressEventObject
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal ProgressEventObject where
+  fromJSVal = return . fmap ProgressEventObject . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
 
 -- charCode :: (MonadIO m) => KeyboardEventObject -> IO 
 
@@ -730,6 +840,36 @@ type instance EventObjectOf Event         = EventObject
 type instance EventObjectOf MouseEvent    = MouseEventObject
 type instance EventObjectOf KeyboardEvent = KeyboardEventObject
 type instance EventObjectOf FormEvent     = EventObject
+type instance EventObjectOf ProgressEvent = ProgressEventObject
+
+
+-- * DOMRect
+
+newtype DOMClientRect = DomClientRect { unDomClientRect :: JSVal }
+
+foreign import javascript unsafe "$1[\"width\"]" width ::
+         DOMClientRect -> Double
+
+foreign import javascript unsafe "$1[\"top\"]" rectTop ::
+         DOMClientRect -> Double
+
+foreign import javascript unsafe "$1[\"left\"]" rectLeft ::
+         DOMClientRect -> Double
+
+foreign import javascript unsafe "$1[\"right\"]" rectRight ::
+         DOMClientRect -> Double
+
+foreign import javascript unsafe "$1[\"bottom\"]" rectBottom ::
+         DOMClientRect -> Double
+
+foreign import javascript unsafe "$1[\"height\"]" height ::
+         DOMClientRect -> Double
+
+foreign import javascript unsafe "$1[\"getBoundingClientRect\"]()" js_getBoundingClientRect ::
+  JSElement -> IO DOMClientRect
+
+getBoundingClientRect :: (MonadIO m) => JSElement -> m DOMClientRect
+getBoundingClientRect = liftIO . js_getBoundingClientRect
 
 -- * addEventListener
 
@@ -744,7 +884,7 @@ addEventListener :: (MonadIO m, IsEventTarget self, IsEvent event, FromJSVal (Ev
                -> Bool
                -> m ()
 addEventListener self event callback useCapture = liftIO $
-  do cb <- asyncCallback1 callback'
+  do cb <- syncCallback1 ThrowWouldBlock callback'
      js_addEventListener (toEventTarget self) (eventToJSString event) cb useCapture
   where
     callback' = \ev ->
@@ -1285,6 +1425,9 @@ fillText ctx txt x y (Just maxWidth) = liftIO $ js_fillTextMaxWidth ctx txt x y 
 
 foreign import javascript unsafe "$1[\"scale\"]($2, $3)"
   js_scale :: JSContext2D -> Double -> Double -> IO ()
+
+foreign import javascript unsafe "alert($1)"
+  js_alert :: JSString -> IO ()
 
 scale :: (MonadIO m) => JSContext2D -> Double -> Double -> m ()
 scale ctx x y = liftIO $ js_scale ctx x y

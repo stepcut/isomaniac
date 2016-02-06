@@ -33,7 +33,9 @@ update' action model =
 view' :: Model -> (HTML Action, [Canvas])
 view' (Model c) =
     ([hsx| <div tabindex="1" [Event KeyPress (\e -> pure (KeyPressed (chr (charCode e))))]>
-             <p>The last key that was pressed was: <% show c %></p>
+             <p>The last <b>key</b> that was pressed was: <% show c %></p>
+             <img src="https://scontent.ford1-1.fna.fbcdn.net/hphotos-prn2/t31.0-8/1911117_10202359446962199_5609323164895980444_o.jpg" />
+             <p>This is just <i>another</i> line of text.</p>
            </div>
          |], [])
 
