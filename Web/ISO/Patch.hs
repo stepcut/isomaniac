@@ -38,11 +38,11 @@ apply handle document rootNode vdom patches =
     do let indices = Map.keys patches
        case indices of
         [] -> pure rootNode
-        _ -> do -- putStrLn $ "indices (keys) = " ++ show indices
-                -- putStrLn $ "apply = " ++ show patches
+        _ -> do putStrLn $ "indices (keys) = " ++ show indices
+                putStrLn $ "apply = " ++ show patches
                 (Just first) <- getFirstChild rootNode -- FIXME: handle Nothing
                 nodeList <- getNodes first vdom indices
-                --       putStrLn $ "nodeList length = " ++ show (length nodeList)
+                putStrLn $ "nodeList length = " ++ show (length nodeList)
                 mapM_ (apply' handle document patches) nodeList
                 return rootNode
 
@@ -52,7 +52,7 @@ apply' :: (action -> IO ())
        -> (Int, JSNode)
        -> IO ()
 apply' handle document patchMap (index, node) = do
---    putStrLn $ "apply' with index = " ++ show index
+    putStrLn $ "apply' with index = " ++ show index
     case Map.lookup index patchMap of
       (Just patches) ->
           mapM_ (apply'' handle document node) patches
@@ -66,7 +66,7 @@ apply'' :: (action -> IO ())
 apply'' handle document node patch =
     case patch of
       (VText b t) -> do oldLength <- getLength node
---                        putStrLn $  "replaceData(0" ++ ", " ++ show oldLength ++ ", " ++ unpack t ++ ")"
+                        putStrLn $  "replaceData(0" ++ ", " ++ show oldLength ++ ", " ++ unpack t ++ ")"
                         replaceData node 0 oldLength (escape b t)
       (Props newProps) -> -- FIXME: doesn't handle changes to events.
           do let e = JSElement $ unJSNode node

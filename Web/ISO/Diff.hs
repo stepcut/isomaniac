@@ -46,7 +46,7 @@ walk a mb index =
       (Element tagNameA attrsA keyA descendantsA childrenA)
         | tagNameA == tagNameB && keyA == keyB ->
             let propsPatches    = diffAttrs attrsA attrsB index
-                childrenPatches = diffChildren childrenA childrenB index
+                childrenPatches = diffChildren index childrenA childrenB index
             in propsPatches ++ childrenPatches
       _ -> [(index, [VNode b])]
    (Just (CDATA escapeB txtB)) ->
@@ -55,16 +55,16 @@ walk a mb index =
         | escapeA == escapeB && txtA == txtB -> []
       _ -> [(index, [VText escapeB txtB])]
 
-diffChildren :: [HTML action] -> [HTML action] -> Int -> [(Int, [Patch action])]
-diffChildren childrenA childrenB index =
+diffChildren :: Int -> [HTML action] -> [HTML action] -> Int -> [(Int, [Patch action])]
+diffChildren parentIndex childrenA childrenB index =
   case (childrenA, childrenB) of
    ([], []) -> []
    ([], (b:bs)) ->
-     (index + 1, [Insert b]) : diffChildren [] bs (index + 1)
+     (parentIndex, [Insert b]) : diffChildren parentIndex [] bs (index + 1)
    ((a:as), []) ->
-     (walk a Nothing (index + 1)) ++ (diffChildren as [] (index + 1 + (elementDescendants' a)))
+     (walk a Nothing (index + 1)) ++ (diffChildren parentIndex as [] (index + 1 + (elementDescendants' a)))
    ((a:as), (b:bs)) ->
-     (walk a (Just b) (index + 1)) ++ (diffChildren as bs (index + 1 + (elementDescendants' a)))
+     (walk a (Just b) (index + 1)) ++ (diffChildren parentIndex as bs (index + 1 + (elementDescendants' a)))
   where
        elementDescendants' (CDATA {}) = 0
        elementDescendants' e = elementDescendants e
