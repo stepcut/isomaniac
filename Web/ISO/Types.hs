@@ -172,6 +172,12 @@ foreign import javascript unsafe "$1[\"devicePixelRatio\"]"
 devicePixelRatio :: (MonadIO m) => JSWindow -> m (Maybe Double)
 devicePixelRatio w = liftIO (fromJSVal =<< js_devicePixelRatio w)
 
+foreign import javascript unsafe "$1[\"getSelection\"]()"
+  js_getSelection :: JSWindow -> IO Selection
+
+getSelection :: (MonadIO m) => JSWindow -> m Selection
+getSelection w = liftIO (js_getSelection w)
+
 -- * JSElement
 
 newtype JSElement = JSElement JSVal
@@ -605,12 +611,6 @@ data DragEvent
   | Drop
   deriving (Eq, Show, Read)
 
-data ClipboardEvent
-  = Copy
-  | Cut
-  | Paste
-  deriving (Eq, Show, Read)
-
 data PrintEvent
   = AfterPrint
   | BeforePrint
@@ -750,8 +750,6 @@ foreign import javascript unsafe "$1[\"preventDefault\"]()" js_preventDefault ::
 preventDefault :: (IsEventObject obj, MonadIO m) => obj -> m ()
 preventDefault obj = liftIO (js_preventDefault (asEventObject obj))
 
-
-
 foreign import javascript unsafe "$1[\"stopPropagation\"]()" js_stopPropagation ::
         EventObject -> IO ()
 
@@ -836,12 +834,12 @@ instance FromJSVal FormEventObject where
 -- * EventObjectOf
 
 type family EventObjectOf event :: *
-type instance EventObjectOf Event         = EventObject
-type instance EventObjectOf MouseEvent    = MouseEventObject
-type instance EventObjectOf KeyboardEvent = KeyboardEventObject
-type instance EventObjectOf FormEvent     = EventObject
-type instance EventObjectOf ProgressEvent = ProgressEventObject
-
+type instance EventObjectOf Event          = EventObject
+type instance EventObjectOf MouseEvent     = MouseEventObject
+type instance EventObjectOf KeyboardEvent  = KeyboardEventObject
+type instance EventObjectOf FormEvent      = EventObject
+type instance EventObjectOf ProgressEvent  = ProgressEventObject
+type instance EventObjectOf ClipboardEvent = ClipboardEventObject
 
 -- * DOMRect
 
@@ -1181,6 +1179,68 @@ getStatusText self
 foreign import javascript unsafe "$1[\"responseURL\"]"
         js_getResponseURL :: XMLHttpRequest -> IO JSString
 
+-- * Selection
+
+newtype Selection = Selection { unSelection ::  JSVal }
+
+instance ToJSVal Selection where
+  toJSVal = pure . unSelection
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal Selection where
+  fromJSVal = pure . fmap Selection . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+foreign import javascript unsafe "$1[\"getRangeAt\"]($2)"
+        js_getRangeAt :: Selection -> Int -> IO Range
+
+getRangeAt :: (MonadIO m) => Selection -> Int -> m Range
+getRangeAt selection index = liftIO (js_getRangeAt selection index)
+
+foreign import javascript unsafe "$1[\"rangeCount\"]"
+        js_getRangeCount :: Selection -> IO Int
+
+getRangeCount :: (MonadIO m) => Selection -> m Int
+getRangeCount selection = liftIO (js_getRangeCount selection)
+
+foreign import javascript unsafe "$1[\"toString\"]()"
+ selectionToString :: Selection -> IO JSString
+
+-- * Range
+
+newtype Range = Range { unRange ::  JSVal }
+
+instance ToJSVal Range where
+  toJSVal = pure . unRange
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal Range where
+  fromJSVal = pure . fmap Range . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+foreign import javascript unsafe "$1[\"startContainer\"]"
+        js_getStartContainer :: Range -> IO JSNode
+
+getStartContainer :: (MonadIO m) => Range -> m JSNode
+getStartContainer r = liftIO (js_getStartContainer r)
+
+foreign import javascript unsafe "$1[\"startOffset\"]"
+        js_getStartOffset :: Range -> IO Int
+
+getStartOffset :: (MonadIO m) => Range -> m Int
+getStartOffset r = liftIO (js_getStartOffset r)
+
+foreign import javascript unsafe "$1[\"endContainer\"]"
+        js_getEndContainer :: Range -> IO JSNode
+
+getEndContainer :: (MonadIO m) => Range -> m JSNode
+getEndContainer r = liftIO (js_getEndContainer r)
+
+foreign import javascript unsafe "$1[\"endOffset\"]"
+        js_getEndOffset :: Range -> IO Int
+
+getEndOffset :: (MonadIO m) => Range -> m Int
+getEndOffset r = liftIO (js_getEndOffset r)
 
 -- * Pure HTML
 
@@ -1253,6 +1313,74 @@ renderHTML handle doc (Element tag {- events -} attrs _ _ children) =
           do cb <- asyncCallback (handle' elem toAction) -- FIXME: free ?
              addEventListener elem eventType cb False
 -}
+
+-- * DataTransfer
+
+newtype DataTransfer = DataTransfer { unDataTransfer :: JSVal }
+
+instance Show DataTransfer where
+  show _ = "DataTransfer"
+
+instance ToJSVal DataTransfer where
+  toJSVal = pure . unDataTransfer
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal DataTransfer where
+  fromJSVal = pure . fmap DataTransfer . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+foreign import javascript unsafe "$1[\"getData\"]($2)" js_getDataTransferData ::
+        DataTransfer -> JSString -> IO JSString
+
+getDataTransferData :: (MonadIO m) =>
+           DataTransfer
+        -> JSString -- ^ format
+        -> m JSString
+getDataTransferData dt format = liftIO (js_getDataTransferData dt format)
+
+foreign import javascript unsafe "$1[\"setData\"]($2, $3)" js_setDataTransferData ::
+        DataTransfer -> JSString -> JSString -> IO ()
+
+setDataTransferData :: (MonadIO m) =>
+                       DataTransfer
+                    -> JSString -- ^ format
+                    -> JSString -- ^ data
+                    -> m ()
+setDataTransferData dataTransfer format data_ = liftIO (js_setDataTransferData dataTransfer format data_)
+
+-- * Clipboard
+
+data ClipboardEvent
+  = Copy
+  | Cut
+  | Paste
+    deriving (Eq, Show, Read)
+
+instance IsEvent ClipboardEvent where
+  eventToJSString Copy  = JS.pack "copy"
+  eventToJSString Cut   = JS.pack "cut"
+  eventToJSString Paste = JS.pack "paste"
+
+-- * ClipboardEventObject
+
+newtype ClipboardEventObject = ClipboardEventObject { unClipboardEventObject :: JSVal }
+
+instance Show ClipboardEventObject where
+  show _ = "ClipboardEventObject"
+
+instance ToJSVal ClipboardEventObject where
+  toJSVal = pure . unClipboardEventObject
+  {-# INLINE toJSVal #-}
+
+instance FromJSVal ClipboardEventObject where
+  fromJSVal = pure . fmap ClipboardEventObject . maybeJSNullOrUndefined
+  {-# INLINE fromJSVal #-}
+
+instance IsEventObject ClipboardEventObject where
+  asEventObject (ClipboardEventObject jsval) = EventObject jsval
+
+foreign import javascript unsafe "$1[\"clipboardData\"]" clipboardData ::
+        ClipboardEventObject -> IO DataTransfer
 
 -- * Canvas
 
