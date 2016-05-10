@@ -25,7 +25,7 @@ instance Show (Patch action) where
     show (Props attrs) = "Props " <> show attrs
 
 diff :: forall action. HTML action -> Maybe (HTML action) -> Map Int [Patch action]
-diff a b = Map.fromListWith (++) (walk a b 0)
+diff a b = Map.fromListWith (flip (++)) (walk a b 0)
 
 -- FIXME: does not handle changes to Events
 -- FIXME: we should be able to add and remove single attributes

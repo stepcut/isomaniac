@@ -1,6 +1,9 @@
 {-# LANGUAGE ExistentialQuantification, FlexibleContexts, FlexibleInstances, GADTs, JavaScriptFFI, ScopedTypeVariables, TemplateHaskell, TypeFamilies #-}
+{-# language GeneralizedNewtypeDeriving #-}
 module Web.ISO.Types where
 
+import Control.Applicative (Applicative, Alternative)
+import Control.Monad (Monad, MonadPlus)
 import Control.Lens ((^.))
 import Control.Lens.TH (makeLenses)
 import Control.Monad (when)
@@ -33,6 +36,9 @@ foreign import javascript unsafe
 maybeJSNullOrUndefined :: JSVal -> Maybe JSVal
 maybeJSNullOrUndefined r | isNull r || isUndefined r = Nothing
 maybeJSNullOrUndefined r = Just r
+
+newtype EIO a = EIO { eioToIO :: IO a }
+  deriving (Functor, Applicative, Alternative, Monad, MonadPlus)
 
 {-
 fromJSValUnchecked :: (FromJSVal a) => JSVal a -> IO a
@@ -536,7 +542,7 @@ data MouseEvent
   | MouseOver
   | MouseOut
   | MouseUp
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 instance IsEvent MouseEvent where
   eventToJSString Click       = JS.pack "click"
@@ -554,7 +560,7 @@ data KeyboardEvent
   = KeyDown
   | KeyPress
   | KeyUp
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 instance IsEvent KeyboardEvent where
   eventToJSString KeyDown  = JS.pack "keydown"
@@ -572,7 +578,7 @@ data FrameEvent
   | Resize
   | Scroll
   | Unload
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 data FormEvent
   = Blur
@@ -586,7 +592,7 @@ data FormEvent
   | Search
   | Select
   | Submit
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 instance IsEvent FormEvent where
   eventToJSString Blur     = JS.pack "blur"
@@ -609,12 +615,12 @@ data DragEvent
   | DragOver
   | DragStart
   | Drop
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 data PrintEvent
   = AfterPrint
   | BeforePrint
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 data MediaEvent
   = CanPlay
@@ -636,7 +642,7 @@ data MediaEvent
   | TimeUpdate
   | VolumeChange
   | Waiting
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 data ProgressEvent
   = LoadStart
@@ -646,7 +652,7 @@ data ProgressEvent
   | ProgressLoad
   | Timeout
   | LoadEnd
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 instance IsEvent ProgressEvent where
   eventToJSString LoadStart     = JS.pack "loadstart"
@@ -661,17 +667,17 @@ data AnimationEvent
   = AnimationEnd
   | AnimationInteration
   | AnimationStart
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 data TransitionEvent
   = TransitionEnd
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 data ServerSentEvent
   = ServerError
   | ServerMessage
   | Open
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 data MiscEvent
   = MiscMessage
@@ -682,14 +688,14 @@ data MiscEvent
   | Storage
   | Toggle
   | Wheel
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 data TouchEvent
   = TouchCancel
   | TouchEnd
   | TouchMove
   | TouchStart
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 -- https://developer.mozilla.org/en-US/docs/Web/API/ProgressEvent
 -- data ProgressEvent =
@@ -708,7 +714,7 @@ data EventType
   | ServerSentEvent ServerSentEvent
   | MiscEvent MiscEvent
   | TouchEvent TouchEvent
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 -- * Event Objects
 
@@ -747,14 +753,16 @@ target obj = liftIO (fromJSValUnchecked =<< (js_target (asEventObject obj)))
 foreign import javascript unsafe "$1[\"preventDefault\"]()" js_preventDefault ::
         EventObject -> IO ()
 
-preventDefault :: (IsEventObject obj, MonadIO m) => obj -> m ()
-preventDefault obj = liftIO (js_preventDefault (asEventObject obj))
+-- preventDefault :: (IsEventObject obj, MonadIO m) => obj -> m ()
+preventDefault :: (IsEventObject obj) => obj -> EIO ()
+preventDefault obj = EIO (js_preventDefault (asEventObject obj))
 
 foreign import javascript unsafe "$1[\"stopPropagation\"]()" js_stopPropagation ::
         EventObject -> IO ()
 
-stopPropagation :: (IsEventObject obj, MonadIO m) => obj -> m ()
-stopPropagation obj = liftIO (js_stopPropagation (asEventObject obj))
+-- stopPropagation :: (IsEventObject obj, MonadIO m) => obj -> m ()
+stopPropagation :: (IsEventObject obj) => obj -> EIO ()
+stopPropagation obj = EIO (js_stopPropagation (asEventObject obj))
 
 -- * MouseEventObject
 
@@ -1246,7 +1254,7 @@ getEndOffset r = liftIO (js_getEndOffset r)
 
 data Attr action where
   Attr  :: Text -> Text -> Attr action
-  Event :: (FromJSVal (EventObjectOf event), IsEvent event) => event -> (EventObjectOf event -> IO action) -> Attr action
+  Event :: (FromJSVal (EventObjectOf event), IsEvent event) => event -> (EventObjectOf event -> EIO action) -> Attr action
 
 -- | FIXME: this instances is not really right, but was added for the sake of the test suite
 instance Eq (Attr action) where
@@ -1297,7 +1305,7 @@ renderHTML handle doc (Element tag {- events -} attrs _ _ children) =
     where
       doAttr elem (Attr k v)   = setAttribute elem k v
       doAttr elem (Event eventType toAction) =
-           addEventListener elem eventType (\e -> handle =<< toAction e) False
+           addEventListener elem eventType (\e -> handle =<< eioToIO (toAction e)) False
 {-
       handle' :: JSElement -> (Maybe JSString -> action) -> IO ()
       handle' elem toAction =
@@ -1332,21 +1340,20 @@ instance FromJSVal DataTransfer where
 foreign import javascript unsafe "$1[\"getData\"]($2)" js_getDataTransferData ::
         DataTransfer -> JSString -> IO JSString
 
-getDataTransferData :: (MonadIO m) =>
+getDataTransferData :: -- (MonadIO m) =>
            DataTransfer
         -> JSString -- ^ format
-        -> m JSString
-getDataTransferData dt format = liftIO (js_getDataTransferData dt format)
+        -> EIO JSString
+getDataTransferData dt format = EIO (js_getDataTransferData dt format)
 
 foreign import javascript unsafe "$1[\"setData\"]($2, $3)" js_setDataTransferData ::
         DataTransfer -> JSString -> JSString -> IO ()
 
-setDataTransferData :: (MonadIO m) =>
-                       DataTransfer
+setDataTransferData :: DataTransfer
                     -> JSString -- ^ format
                     -> JSString -- ^ data
-                    -> m ()
-setDataTransferData dataTransfer format data_ = liftIO (js_setDataTransferData dataTransfer format data_)
+                    -> EIO ()
+setDataTransferData dataTransfer format data_ = EIO (js_setDataTransferData dataTransfer format data_)
 
 -- * Clipboard
 
@@ -1354,7 +1361,7 @@ data ClipboardEvent
   = Copy
   | Cut
   | Paste
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 instance IsEvent ClipboardEvent where
   eventToJSString Copy  = JS.pack "copy"
@@ -1380,7 +1387,7 @@ instance IsEventObject ClipboardEventObject where
   asEventObject (ClipboardEventObject jsval) = EventObject jsval
 
 foreign import javascript unsafe "$1[\"clipboardData\"]" clipboardData ::
-        ClipboardEventObject -> IO DataTransfer
+        ClipboardEventObject -> EIO DataTransfer
 
 -- * Canvas
 
@@ -1520,7 +1527,7 @@ data TextAlign
   | AlignLeft
   | AlignCenter
   | AlignRight
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 textAlignToJSString :: TextAlign -> JSString
 textAlignToJSString AlignStart  = JS.pack "start"
@@ -1582,9 +1589,9 @@ translate :: (MonadIO m) =>
 translate ctx x y = liftIO $ js_translate ctx x y
 
 data Gradient = Gradient
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 data Pattern = Pattern
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 type Percentage = Double
 type Alpha = Double
@@ -1592,13 +1599,13 @@ type Alpha = Double
 data Color
   = ColorName JSString
   | RGBA Percentage Percentage Percentage Alpha
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 data Style
   = StyleColor Color
   | StyleGradient Gradient
   | StylePattern Pattern
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 data Rect
   = Rect { _rectX      :: Double
@@ -1606,7 +1613,7 @@ data Rect
          , _rectWidth  :: Double
          , _rectHeight :: Double
          }
-  deriving (Eq, Show, Read)
+  deriving (Eq, Ord, Show, Read)
 
 -- https://developer.mozilla.org/en-US/docs/Web/API/Path2D
 data Path2D
@@ -1614,7 +1621,7 @@ data Path2D
   | LineTo Double Double
   | PathRect Rect
   | Arc Double Double Double Double Double Bool
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 data Draw
   = FillRect Rect
@@ -1622,7 +1629,7 @@ data Draw
   | Stroke [Path2D]
   | Fill [Path2D]
   | FillText JSString Double Double (Maybe Double)
-    deriving (Eq, Show, Read)
+    deriving (Eq, Ord, Show, Read)
 
 data Context2D
   = FillStyle Style
