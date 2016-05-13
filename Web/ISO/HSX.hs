@@ -5,7 +5,7 @@ import Data.Monoid ((<>))
 import Data.Text (Text, pack, unpack)
 import GHCJS.Marshal.Pure (pFromJSVal)
 import GHCJS.Types (JSVal(..), JSString(..))
-import Web.ISO.Types (Attr(Attr, Event), HTML(Element, CDATA), FormEvent(Blur, Change, Input), MouseEvent(Click), descendants)
+import Web.ISO.Types (Attr(Attr, Event), HTML(Element, CDATA), FormEvent(Change, Input), MouseEvent(Click), descendants)
 
 default (Text)
 
@@ -48,7 +48,7 @@ instance AsAttr action (KV Text action) where
           "onchange" -> Event Change (const $ pure action)
           "onclick"  -> Event Click  (const $ pure action)
           "oninput"  -> Event Input  (const $ pure action)
-          "onblur"   -> Event Blur   (const $ pure action)
+--          "onblur"   -> Event Blur   (const $ pure action)
           _ -> error $ "unsupported event: " ++ (unpack type')
 {-
 instance AsAttr action (KV Text (JSVal -> action)) where

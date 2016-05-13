@@ -580,31 +580,33 @@ data FrameEvent
   | Unload
     deriving (Eq, Ord, Show, Read)
 
-data FormEvent
+data FocusEvent
   = Blur
-  | Change
   | Focus
   | FocusIn
   | FocusOut
+
+data FormEvent
+  = Change
   | Input
   | Invalid
   | Reset
-  | Search
-  | Select
+--  | Search
+--  | Select
   | Submit
   deriving (Eq, Ord, Show, Read)
 
 instance IsEvent FormEvent where
-  eventToJSString Blur     = JS.pack "blur"
+--  eventToJSString Blur     = JS.pack "blur"
   eventToJSString Change   = JS.pack "change"
-  eventToJSString Focus    = JS.pack "focus"
-  eventToJSString FocusIn  = JS.pack "focusin"
-  eventToJSString FocusOut = JS.pack "focusout"
+--  eventToJSString Focus    = JS.pack "focus"
+--  eventToJSString FocusIn  = JS.pack "focusin"
+--  eventToJSString FocusOut = JS.pack "focusout"
   eventToJSString Input    = JS.pack "input"
   eventToJSString Invalid  = JS.pack "invalid"
   eventToJSString Reset    = JS.pack "reset"
-  eventToJSString Search   = JS.pack "search"
-  eventToJSString Select   = JS.pack "select"
+--  eventToJSString Search   = JS.pack "search"
+--  eventToJSString Select   = JS.pack "select"
   eventToJSString Submit   = JS.pack "submit"
 
 data DragEvent
@@ -727,6 +729,9 @@ class IsEventObject obj where
 
 newtype EventObject = EventObject { unEventObject :: JSVal }
 
+instance Show EventObject where
+  show _ = "EventObject"
+
 instance ToJSVal EventObject where
   toJSVal = return . unEventObject
   {-# INLINE toJSVal #-}
@@ -745,10 +750,13 @@ defaultPrevented :: (IsEventObject obj, MonadIO m) => obj -> m Bool
 defaultPrevented obj = liftIO (js_defaultPrevented (asEventObject obj))
 
 foreign import javascript unsafe "$1[\"target\"]" js_target ::
-        EventObject -> IO JSVal
+        EventObject -> JSVal
 
-target :: (IsEventObject obj, MonadIO m) => obj -> m JSElement
-target obj = liftIO (fromJSValUnchecked =<< (js_target (asEventObject obj)))
+target :: (IsEventObject obj) => obj -> JSElement
+target obj = JSElement (js_target (asEventObject obj))
+
+-- target :: (IsEventObject obj, MonadIO m) => obj -> m JSElement
+-- target obj = liftIO (fromJSValUnchecked =<< (js_target (asEventObject obj)))
 
 foreign import javascript unsafe "$1[\"preventDefault\"]()" js_preventDefault ::
         EventObject -> IO ()
@@ -826,19 +834,6 @@ instance FromJSVal ProgressEventObject where
 
 -- charCode :: (MonadIO m) => KeyboardEventObject -> IO 
 
-{-
--- * FormEventObject
-
-newtype FormEventObject = FormEventObject { unFormEventObject :: JSVal }
-
-instance ToJSVal FormEventObject where
-  toJSVal = return . unFormEventObject
-  {-# INLINE toJSVal #-}
-
-instance FromJSVal FormEventObject where
-  fromJSVal = return . fmap FormEventObject . maybeJSNullOrUndefined
-  {-# INLINE fromJSVal #-}
--}
 -- * EventObjectOf
 
 type family EventObjectOf event :: *
